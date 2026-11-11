@@ -17,6 +17,8 @@ namespace Sonarr.Api.V3.Profiles.Quality
         public int CutoffFormatScore { get; set; }
         public int MinUpgradeFormatScore { get; set; }
         public List<ProfileFormatItemResource> FormatItems { get; set; }
+        public List<ProfileSizeDefinition> SizeDefinitions { get; set; }
+        public bool? UseGlobalSizeDefinitions { get; set; }
     }
 
     public class QualityProfileQualityItemResource : RestResource
@@ -58,7 +60,9 @@ namespace Sonarr.Api.V3.Profiles.Quality
                 MinFormatScore = model.MinFormatScore,
                 CutoffFormatScore = model.CutoffFormatScore,
                 MinUpgradeFormatScore = model.MinUpgradeFormatScore,
-                FormatItems = model.FormatItems.ConvertAll(ToResource)
+                FormatItems = model.FormatItems.ConvertAll(ToResource),
+                SizeDefinitions = model.SizeDefinitions,
+                UseGlobalSizeDefinitions = model.UseGlobalSizeDefinitions ?? false
             };
         }
 
@@ -106,7 +110,9 @@ namespace Sonarr.Api.V3.Profiles.Quality
                 MinFormatScore = resource.MinFormatScore,
                 CutoffFormatScore = resource.CutoffFormatScore,
                 MinUpgradeFormatScore = resource.MinUpgradeFormatScore,
-                FormatItems = resource.FormatItems.ConvertAll(ToModel)
+                FormatItems = resource.FormatItems.ConvertAll(ToModel),
+                SizeDefinitions = resource.SizeDefinitions,
+                UseGlobalSizeDefinitions = resource.UseGlobalSizeDefinitions
             };
         }
 

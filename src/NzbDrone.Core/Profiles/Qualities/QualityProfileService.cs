@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using FluentValidation;
 using NLog;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.CustomFormats;
@@ -49,12 +50,25 @@ namespace NzbDrone.Core.Profiles.Qualities
 
         public QualityProfile Add(QualityProfile profile)
         {
+            ValidateSizeDefinitions(profile);
             return _qualityProfileRepository.Insert(profile);
         }
 
         public void Update(QualityProfile profile)
         {
+            var stored = _qualityProfileRepository.Get(profile.Id);
+            profile.SizeDefinitions ??= stored.SizeDefinitions;
+            profile.UseGlobalSizeDefinitions ??= stored.UseGlobalSizeDefinitions;
+            ValidateSizeDefinitions(profile);
             _qualityProfileRepository.Update(profile);
+        }
+
+        private static void ValidateSizeDefinitions(QualityProfile profile)
+        {
+            if (profile.SizeDefinitions != null)
+            {
+                new ProfileSizeDefinitionsValidator().ValidateAndThrow(profile.SizeDefinitions);
+            }
         }
 
         public void Delete(int id)

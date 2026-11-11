@@ -21,6 +21,8 @@ namespace NzbDrone.Core.Profiles.Qualities
         public int MinUpgradeFormatScore { get; set; }
         public List<ProfileFormatItem> FormatItems { get; set; }
         public List<QualityProfileQualityItem> Items { get; set; }
+        public List<ProfileSizeDefinition> SizeDefinitions { get; set; }
+        public bool? UseGlobalSizeDefinitions { get; set; }
 
         public Quality FirststAllowedQuality()
         {

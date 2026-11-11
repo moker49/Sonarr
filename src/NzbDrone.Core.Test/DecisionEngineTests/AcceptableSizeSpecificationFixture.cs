@@ -7,6 +7,7 @@ using NUnit.Framework;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.DecisionEngine.Specifications;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.Qualities;
 using NzbDrone.Core.Test.Framework;
 using NzbDrone.Core.Tv;
@@ -91,6 +92,23 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             Mocker.GetMock<IEpisodeService>().Setup(
                 s => s.GetEpisodesBySeason(It.IsAny<int>(), It.IsAny<int>()))
                 .Returns(_episodes);
+        }
+
+        [Test]
+        public void should_apply_profile_size_limits_to_multi_episode_release()
+        {
+            _series.QualityProfile = new QualityProfile
+            {
+                SizeDefinitions = new List<ProfileSizeDefinition>
+                {
+                    new ProfileSizeDefinition { QualityId = Quality.SDTV.Id, MinSize = 5, MaxSize = 10 }
+                }
+            };
+            _parseResultMulti.Release.Size = 250.Megabytes();
+
+            Subject.IsSatisfiedBy(_parseResultMulti, null).Accepted.Should().BeFalse();
+            _series.QualityProfile.Value.UseGlobalSizeDefinitions = true;
+            Subject.IsSatisfiedBy(_parseResultMulti, null).Accepted.Should().BeTrue();
         }
 
         [TestCase(30, 50, false)]
