@@ -4,19 +4,29 @@ using System.Data;
 using System.Linq;
 using Dapper;
 using NzbDrone.Core.Datastore;
+using NzbDrone.Core.Lifecycle;
+using NzbDrone.Core.Messaging.Events;
 
 namespace NzbDrone.Core.Download
 {
     public interface IEpisodeDownloadReservationService
     {
         int Reserve(int seriesVersionId, string releaseKey, IReadOnlyCollection<int> episodeIds);
+        int Reserve(int seriesVersionId, IReadOnlyCollection<string> releaseKeys, IReadOnlyCollection<int> episodeIds);
+        List<EpisodeDownloadReservation> ForSeries(int seriesId);
+        List<int> GetEpisodeIds(int reservationId);
+        EpisodeDownloadReservation FindByClientDownload(int clientId, string downloadId);
+        List<EpisodeDownloadReservation> FindUnboundCandidates(int clientId, IReadOnlyCollection<string> releaseKeys);
+        void BeginDispatch(int reservationId, int clientId);
+        void Submitted(int reservationId, string downloadId);
+        void MarkUncertain(int reservationId, string note);
         void Release(int reservationId);
     }
 
     // Not connected to dispatch until download-client identity and restart
     // reconciliation are implemented. Reservations must not be cleared merely
     // because a client request timed out.
-    public class EpisodeDownloadReservationService : IEpisodeDownloadReservationService
+    public class EpisodeDownloadReservationService : IEpisodeDownloadReservationService, IHandle<ApplicationStartedEvent>
     {
         private readonly IMainDatabase _database;
 
@@ -27,7 +37,13 @@ namespace NzbDrone.Core.Download
 
         public int Reserve(int seriesVersionId, string releaseKey, IReadOnlyCollection<int> episodeIds)
         {
-            if (seriesVersionId <= 0 || string.IsNullOrWhiteSpace(releaseKey) || releaseKey.Length > 255 || releaseKey != releaseKey.Trim() ||
+            return Reserve(seriesVersionId, new[] { releaseKey }, episodeIds);
+        }
+
+        public int Reserve(int seriesVersionId, IReadOnlyCollection<string> releaseKeys, IReadOnlyCollection<int> episodeIds)
+        {
+            if (seriesVersionId <= 0 || releaseKeys == null || releaseKeys.Count == 0 ||
+                releaseKeys.Any(key => string.IsNullOrWhiteSpace(key) || key.Length > 255 || key != key.Trim()) || releaseKeys.Distinct(StringComparer.Ordinal).Count() != releaseKeys.Count ||
                 episodeIds == null || episodeIds.Count == 0 || episodeIds.Any(id => id <= 0) || episodeIds.Distinct().Count() != episodeIds.Count)
             {
                 throw new ArgumentException("A version, release key and nonempty set of distinct episode IDs are required.");
@@ -47,7 +63,7 @@ namespace NzbDrone.Core.Download
                 WHERE sv.""Id"" = @seriesVersionId AND sv.""SeriesId"" = @seriesId AND sv.""Retired"" = @retired", new { seriesVersionId, seriesId, retired = false }, transaction);
             var episodes = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"Episodes\" WHERE \"SeriesId\" = @seriesId AND \"Id\" IN @episodeIds", new { seriesId, episodeIds }, transaction);
             var occupied = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeDownloadReservationItems\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"EpisodeId\" IN @episodeIds", new { seriesVersionId, episodeIds }, transaction);
-            var duplicate = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeDownloadReservations\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"ReleaseKey\" = @releaseKey", new { seriesVersionId, releaseKey }, transaction);
+            var duplicate = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeDownloadReservationKeys\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"ReleaseKey\" IN @releaseKeys", new { seriesVersionId, releaseKeys }, transaction);
             if (active != 1 || episodes != episodeIds.Count || occupied != 0 || duplicate != 0)
             {
                 throw new InvalidOperationException("The version or episodes are invalid, or the release overlaps an existing reservation.");
@@ -55,7 +71,11 @@ namespace NzbDrone.Core.Download
 
             var sql = "INSERT INTO \"EpisodeDownloadReservations\" (\"SeriesId\", \"SeriesVersionId\", \"ReleaseKey\", \"CreatedAt\") VALUES (@seriesId, @seriesVersionId, @releaseKey, @createdAt)";
             sql += _database.DatabaseType == DatabaseType.PostgreSQL ? " RETURNING \"Id\"" : "; SELECT last_insert_rowid()";
-            var reservationId = connection.ExecuteScalar<int>(sql, new { seriesId, seriesVersionId, releaseKey, createdAt = DateTime.UtcNow }, transaction);
+            var reservationId = connection.ExecuteScalar<int>(sql, new { seriesId, seriesVersionId, releaseKey = releaseKeys.First(), createdAt = DateTime.UtcNow }, transaction);
+            foreach (var releaseKey in releaseKeys)
+            {
+                connection.Execute("INSERT INTO \"EpisodeDownloadReservationKeys\" (\"ReservationId\", \"SeriesVersionId\", \"ReleaseKey\") VALUES (@reservationId, @seriesVersionId, @releaseKey)", new { reservationId, seriesVersionId, releaseKey }, transaction);
+            }
             foreach (var episodeId in episodeIds)
             {
                 connection.Execute("INSERT INTO \"EpisodeDownloadReservationItems\" (\"ReservationId\", \"SeriesVersionId\", \"EpisodeId\") VALUES (@reservationId, @seriesVersionId, @episodeId)", new { reservationId, seriesVersionId, episodeId }, transaction);
@@ -80,8 +100,119 @@ namespace NzbDrone.Core.Download
                 throw new InvalidOperationException("The reservation's series no longer exists.");
             }
 
+            var state = connection.QuerySingleOrDefault<int?>("SELECT \"State\" FROM \"EpisodeDownloadReservations\" WHERE \"Id\" = @reservationId AND \"SeriesId\" = @seriesId", new { reservationId, seriesId }, transaction);
+            if (state.HasValue && state != (int)EpisodeDownloadReservationState.Prepared)
+            {
+                throw new InvalidOperationException("A dispatched reservation cannot be released without verified reconciliation.");
+            }
+
             connection.Execute("DELETE FROM \"EpisodeDownloadReservationItems\" WHERE \"ReservationId\" = @reservationId", new { reservationId }, transaction);
+            connection.Execute("DELETE FROM \"EpisodeDownloadReservationKeys\" WHERE \"ReservationId\" = @reservationId", new { reservationId }, transaction);
             connection.Execute("DELETE FROM \"EpisodeDownloadReservations\" WHERE \"Id\" = @reservationId AND \"SeriesId\" = @seriesId", new { reservationId, seriesId }, transaction);
+            transaction.Commit();
+        }
+
+        public List<EpisodeDownloadReservation> ForSeries(int seriesId)
+        {
+            using var connection = _database.OpenConnection();
+            return connection.Query<EpisodeDownloadReservation>("SELECT * FROM \"EpisodeDownloadReservations\" WHERE \"SeriesId\" = @seriesId ORDER BY \"Id\"", new { seriesId }).ToList();
+        }
+
+        public List<int> GetEpisodeIds(int reservationId)
+        {
+            using var connection = _database.OpenConnection();
+            return connection.Query<int>("SELECT \"EpisodeId\" FROM \"EpisodeDownloadReservationItems\" WHERE \"ReservationId\" = @reservationId ORDER BY \"EpisodeId\"", new { reservationId }).ToList();
+        }
+
+        public EpisodeDownloadReservation FindByClientDownload(int clientId, string downloadId)
+        {
+            if (clientId <= 0 || string.IsNullOrWhiteSpace(downloadId))
+            {
+                return null;
+            }
+
+            var normalizedId = downloadId.Trim().ToUpperInvariant();
+            using var connection = _database.OpenConnection();
+            return connection.QuerySingleOrDefault<EpisodeDownloadReservation>("SELECT * FROM \"EpisodeDownloadReservations\" WHERE \"DownloadClientId\" = @clientId AND \"NormalizedDownloadId\" = @normalizedId", new { clientId, normalizedId });
+        }
+
+        public List<EpisodeDownloadReservation> FindUnboundCandidates(int clientId, IReadOnlyCollection<string> releaseKeys)
+        {
+            if (clientId <= 0 || releaseKeys == null || releaseKeys.Count == 0 || releaseKeys.Any(string.IsNullOrWhiteSpace))
+            {
+                return new List<EpisodeDownloadReservation>();
+            }
+
+            using var connection = _database.OpenConnection();
+            return connection.Query<EpisodeDownloadReservation>(@"SELECT DISTINCT r.* FROM ""EpisodeDownloadReservations"" r
+                JOIN ""EpisodeDownloadReservationKeys"" k ON k.""ReservationId"" = r.""Id""
+                WHERE r.""DownloadClientId"" = @clientId AND r.""DownloadId"" IS NULL
+                  AND r.""State"" IN @states AND k.""ReleaseKey"" IN @releaseKeys", new
+            {
+                clientId,
+                releaseKeys,
+                states = new[] { (int)EpisodeDownloadReservationState.Dispatching, (int)EpisodeDownloadReservationState.Uncertain }
+            }).ToList();
+        }
+
+        public void BeginDispatch(int reservationId, int clientId)
+        {
+            if (clientId <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(clientId));
+            }
+
+            ChangeState(reservationId, EpisodeDownloadReservationState.Prepared, EpisodeDownloadReservationState.Dispatching, clientId, null, null);
+        }
+
+        public void Submitted(int reservationId, string downloadId)
+        {
+            if (string.IsNullOrWhiteSpace(downloadId) || downloadId.Length > 255 || downloadId != downloadId.Trim())
+            {
+                throw new ArgumentException("A valid download-client ID is required.", nameof(downloadId));
+            }
+
+            ChangeState(reservationId, EpisodeDownloadReservationState.Dispatching, EpisodeDownloadReservationState.Submitted, null, downloadId, null);
+        }
+
+        public void MarkUncertain(int reservationId, string note)
+        {
+            if (string.IsNullOrWhiteSpace(note) || note.Length > 255)
+            {
+                throw new ArgumentException("A short explanation is required.", nameof(note));
+            }
+
+            ChangeState(reservationId, EpisodeDownloadReservationState.Dispatching, EpisodeDownloadReservationState.Uncertain, null, null, note);
+        }
+
+        public void Handle(ApplicationStartedEvent message)
+        {
+            using var connection = _database.OpenConnection();
+            connection.Execute("UPDATE \"EpisodeDownloadReservations\" SET \"State\" = @uncertain, \"UpdatedAt\" = @updatedAt, \"Note\" = @note WHERE \"State\" = @dispatching", new
+            {
+                uncertain = (int)EpisodeDownloadReservationState.Uncertain,
+                dispatching = (int)EpisodeDownloadReservationState.Dispatching,
+                updatedAt = DateTime.UtcNow,
+                note = "Application restarted during dispatch; verify the download client."
+            });
+        }
+
+        private void ChangeState(int reservationId, EpisodeDownloadReservationState expected, EpisodeDownloadReservationState target, int? clientId, string downloadId, string note)
+        {
+            using var connection = _database.OpenConnection();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            var seriesId = connection.QuerySingleOrDefault<int?>("SELECT \"SeriesId\" FROM \"EpisodeDownloadReservations\" WHERE \"Id\" = @reservationId", new { reservationId }, transaction);
+            if (!seriesId.HasValue || connection.Execute("UPDATE \"Series\" SET \"Id\" = \"Id\" WHERE \"Id\" = @seriesId", new { seriesId }, transaction) != 1)
+            {
+                throw new InvalidOperationException("The reservation or its series no longer exists.");
+            }
+
+            var updated = connection.Execute("UPDATE \"EpisodeDownloadReservations\" SET \"State\" = @target, \"DownloadClientId\" = COALESCE(@clientId, \"DownloadClientId\"), \"DownloadId\" = @downloadId, \"NormalizedDownloadId\" = @normalizedDownloadId, \"UpdatedAt\" = @updatedAt, \"Note\" = @note WHERE \"Id\" = @reservationId AND \"SeriesId\" = @seriesId AND \"State\" = @expected", new { reservationId, seriesId, expected = (int)expected, target = (int)target, clientId, downloadId, normalizedDownloadId = downloadId?.ToUpperInvariant(), updatedAt = DateTime.UtcNow, note }, transaction);
+            if (updated != 1)
+            {
+                throw new InvalidOperationException("The reservation is not in the expected state.");
+            }
+
             transaction.Commit();
         }
     }

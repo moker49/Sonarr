@@ -3,12 +3,26 @@ using NzbDrone.Core.Datastore;
 
 namespace NzbDrone.Core.Download
 {
+    public enum EpisodeDownloadReservationState
+    {
+        Prepared = 0,
+        Dispatching = 1,
+        Submitted = 2,
+        Uncertain = 3
+    }
+
     public class EpisodeDownloadReservation : ModelBase
     {
         public int SeriesId { get; set; }
         public int SeriesVersionId { get; set; }
         public string ReleaseKey { get; set; }
         public DateTime CreatedAt { get; set; }
+        public EpisodeDownloadReservationState State { get; set; }
+        public int? DownloadClientId { get; set; }
+        public string DownloadId { get; set; }
+        public string NormalizedDownloadId { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+        public string Note { get; set; }
     }
 
     public class EpisodeDownloadReservationItem : ModelBase
@@ -16,5 +30,12 @@ namespace NzbDrone.Core.Download
         public int ReservationId { get; set; }
         public int SeriesVersionId { get; set; }
         public int EpisodeId { get; set; }
+    }
+
+    public class EpisodeDownloadReservationKey : ModelBase
+    {
+        public int ReservationId { get; set; }
+        public int SeriesVersionId { get; set; }
+        public string ReleaseKey { get; set; }
     }
 }
