@@ -65,6 +65,12 @@ class QualityDefinition extends Component {
     this._forceUpdateTimeout = setTimeout(() => this.forceUpdate(), 1);
   }
 
+  componentDidUpdate(prevProps) {
+    if (prevProps.minSize !== this.props.minSize || prevProps.preferredSize !== this.props.preferredSize || prevProps.maxSize !== this.props.maxSize) {
+      this.onAfterSliderChange();
+    }
+  }
+
   componentWillUnmount() {
     if (this._forceUpdateTimeout) {
       clearTimeout(this._forceUpdateTimeout);
@@ -96,6 +102,9 @@ class QualityDefinition extends Component {
   // Listeners
 
   onSliderChange = ([sliderMinSize, sliderPreferredSize, sliderMaxSize]) => {
+    if (this.props.isDisabled) {
+      return;
+    }
     this.setState({
       sliderMinSize,
       sliderMaxSize,
@@ -117,13 +126,16 @@ class QualityDefinition extends Component {
     } = this.props;
 
     this.setState({
-      sliderMiSize: getSliderValue(minSize, slider.min),
+      sliderMinSize: getSliderValue(minSize, slider.min),
       sliderMaxSize: getSliderValue(maxSize, slider.max),
       sliderPreferredSize: getSliderValue(preferredSize, (slider.max - 3)) // fix
     });
   };
 
   onMinSizeChange = ({ value }) => {
+    if (this.props.isDisabled) {
+      return;
+    }
     const minSize = getValue(value);
 
     this.setState({
@@ -138,10 +150,13 @@ class QualityDefinition extends Component {
   };
 
   onPreferredSizeChange = ({ value }) => {
+    if (this.props.isDisabled) {
+      return;
+    }
     const preferredSize = value === (MAX - 3) ? null : getValue(value);
 
     this.setState({
-      sliderPreferredSize: getSliderValue(preferredSize, slider.preferred)
+      sliderPreferredSize: getSliderValue(preferredSize, (slider.max - 3))
     });
 
     this.props.onSizeChange({
@@ -152,6 +167,9 @@ class QualityDefinition extends Component {
   };
 
   onMaxSizeChange = ({ value }) => {
+    if (this.props.isDisabled) {
+      return;
+    }
     const maxSize = value === MAX ? null : getValue(value);
 
     this.setState({
@@ -177,6 +195,8 @@ class QualityDefinition extends Component {
       maxSize,
       preferredSize,
       advancedSettings,
+      showTitle = true,
+      isDisabled = false,
       onTitleChange
     } = this.props;
 
@@ -202,15 +222,17 @@ class QualityDefinition extends Component {
         </div>
 
         <div className={styles.title}>
-          <TextInput
-            name={`${id}.${title}`}
-            value={title}
-            onChange={onTitleChange}
-          />
+          {showTitle ?
+            <TextInput
+              name={`${id}.${title}`}
+              value={title}
+              onChange={onTitleChange}
+            /> : null}
         </div>
 
         <div className={styles.sizeLimit}>
           <ReactSlider
+            disabled={isDisabled}
             className={styles.slider}
             min={slider.min}
             max={slider.max}
@@ -284,6 +306,7 @@ class QualityDefinition extends Component {
                 {translate('Min')}
 
                 <NumberInput
+                  isDisabled={isDisabled}
                   className={styles.sizeInput}
                   name={`${id}.min`}
                   value={minSize || MIN}
@@ -299,6 +322,7 @@ class QualityDefinition extends Component {
                 {translate('Preferred')}
 
                 <NumberInput
+                  isDisabled={isDisabled}
                   className={styles.sizeInput}
                   name={`${id}.min`}
                   value={preferredSize || MAX - 5}
@@ -314,6 +338,7 @@ class QualityDefinition extends Component {
                 {translate('Max')}
 
                 <NumberInput
+                  isDisabled={isDisabled}
                   className={styles.sizeInput}
                   name={`${id}.max`}
                   value={maxSize || MAX}
@@ -339,7 +364,9 @@ QualityDefinition.propTypes = {
   maxSize: PropTypes.number,
   preferredSize: PropTypes.number,
   advancedSettings: PropTypes.bool.isRequired,
-  onTitleChange: PropTypes.func.isRequired,
+  showTitle: PropTypes.bool,
+  isDisabled: PropTypes.bool,
+  onTitleChange: PropTypes.func,
   onSizeChange: PropTypes.func.isRequired
 };
 

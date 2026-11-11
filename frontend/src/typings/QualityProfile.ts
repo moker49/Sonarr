@@ -18,6 +18,15 @@ interface QualityProfile {
   cutoffFormatScore: number;
   minUpgradeFormatScore: number;
   formatItems: QualityProfileFormatItem[];
+  sizeDefinitions?:
+    | {
+        qualityId: number;
+        minSize: number | null;
+        preferredSize: number | null;
+        maxSize: number | null;
+      }[]
+    | null;
+  useGlobalSizeDefinitions?: boolean;
   id: number;
 }
 

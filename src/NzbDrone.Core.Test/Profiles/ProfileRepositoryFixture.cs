@@ -10,6 +10,27 @@ namespace NzbDrone.Core.Test.Profiles
     public class ProfileRepositoryFixture : DbTest<QualityProfileRepository, QualityProfile>
     {
         [Test]
+        public void should_persist_profile_size_overrides()
+        {
+            var profile = new QualityProfile
+            {
+                Items = Qualities.QualityFixture.GetDefaultQualities(Quality.HDTV720p),
+                Cutoff = Quality.HDTV720p.Id,
+                Name = "Size profile",
+                UseGlobalSizeDefinitions = true,
+                SizeDefinitions = new System.Collections.Generic.List<ProfileSizeDefinition>
+                {
+                    new ProfileSizeDefinition { QualityId = Quality.HDTV720p.Id, MinSize = 2, PreferredSize = 5, MaxSize = 10 }
+                }
+            };
+
+            Subject.Insert(profile);
+
+            StoredModel.UseGlobalSizeDefinitions.Should().BeTrue();
+            StoredModel.SizeDefinitions.Should().BeEquivalentTo(profile.SizeDefinitions);
+        }
+
+        [Test]
         public void should_be_able_to_read_and_write()
         {
             var profile = new QualityProfile

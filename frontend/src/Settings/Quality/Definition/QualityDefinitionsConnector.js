@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import { createSelector } from 'reselect';
-import { fetchQualityDefinitions, saveQualityDefinitions } from 'Store/Actions/settingsActions';
+import { saveQualityDefinitions } from 'Store/Actions/settingsActions';
 import QualityDefinitions from './QualityDefinitions';
 
 function createMapStateToProps() {
@@ -28,7 +28,6 @@ function createMapStateToProps() {
 }
 
 const mapDispatchToProps = {
-  dispatchFetchQualityDefinitions: fetchQualityDefinitions,
   dispatchSaveQualityDefinitions: saveQualityDefinitions
 };
 
@@ -39,13 +38,12 @@ class QualityDefinitionsConnector extends Component {
 
   componentDidMount() {
     const {
-      dispatchFetchQualityDefinitions,
       dispatchSaveQualityDefinitions,
       onChildMounted
     } = this.props;
 
-    dispatchFetchQualityDefinitions();
     onChildMounted(dispatchSaveQualityDefinitions);
+    this.props.onChildStateChange({ isSaving: this.props.isSaving, hasPendingChanges: this.props.hasPendingChanges });
   }
 
   componentDidUpdate(prevProps) {
@@ -81,7 +79,6 @@ class QualityDefinitionsConnector extends Component {
 QualityDefinitionsConnector.propTypes = {
   isSaving: PropTypes.bool.isRequired,
   hasPendingChanges: PropTypes.bool.isRequired,
-  dispatchFetchQualityDefinitions: PropTypes.func.isRequired,
   dispatchSaveQualityDefinitions: PropTypes.func.isRequired,
   onChildMounted: PropTypes.func.isRequired,
   onChildStateChange: PropTypes.func.isRequired
