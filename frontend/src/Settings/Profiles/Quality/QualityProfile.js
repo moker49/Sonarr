@@ -66,6 +66,7 @@ class QualityProfile extends Component {
     const {
       id,
       name,
+      isComposite,
       upgradeAllowed,
       cutoff,
       items,
@@ -81,6 +82,7 @@ class QualityProfile extends Component {
         <div className={styles.nameContainer}>
           <div className={styles.name}>
             {name}
+            {isComposite ? ` (${translate('CompositeDraft')})` : null}
           </div>
 
           <IconButton
@@ -176,6 +178,7 @@ class QualityProfile extends Component {
 QualityProfile.propTypes = {
   id: PropTypes.number.isRequired,
   name: PropTypes.string.isRequired,
+  isComposite: PropTypes.bool,
   upgradeAllowed: PropTypes.bool.isRequired,
   cutoff: PropTypes.number.isRequired,
   items: PropTypes.arrayOf(PropTypes.object).isRequired,

@@ -15,10 +15,12 @@ namespace Sonarr.Api.V3.Profiles.Quality
     public class QualityProfileController : RestController<QualityProfileResource>
     {
         private readonly IQualityProfileService _profileService;
+        private readonly ICompositeProfileDraftService _drafts;
 
-        public QualityProfileController(IQualityProfileService profileService, ICustomFormatService formatService)
+        public QualityProfileController(IQualityProfileService profileService, ICustomFormatService formatService, ICompositeProfileDraftService drafts)
         {
             _profileService = profileService;
+            _drafts = drafts;
             SharedValidator.RuleFor(c => c.Name).NotEmpty();
 
             SharedValidator.RuleFor(c => c.MinUpgradeFormatScore).GreaterThanOrEqualTo(1);
@@ -74,14 +76,19 @@ namespace Sonarr.Api.V3.Profiles.Quality
 
         protected override QualityProfileResource GetResourceById(int id)
         {
-            return _profileService.Get(id).ToResource();
+            var resource = _profileService.Get(id).ToResource();
+            resource.IsComposite = _drafts.GetProfileIds().Contains(id);
+            return resource;
         }
 
         [HttpGet]
         [Produces("application/json")]
         public List<QualityProfileResource> GetAll()
         {
-            return _profileService.All().ToResource();
+            var resources = _profileService.All().ToResource();
+            var compositeIds = _drafts.GetProfileIds();
+            resources.ForEach(profile => profile.IsComposite = compositeIds.Contains(profile.Id));
+            return resources;
         }
     }
 }

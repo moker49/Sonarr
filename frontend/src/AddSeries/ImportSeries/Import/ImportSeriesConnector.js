@@ -37,7 +37,7 @@ function createMapStateToProps() {
         rootFoldersFetching,
         rootFoldersPopulated,
         rootFoldersError,
-        qualityProfiles: qualityProfiles.items,
+        qualityProfiles: qualityProfiles.items.filter((profile) => !profile.isComposite),
         defaultQualityProfileId: addSeries.defaults.qualityProfileId
       };
 

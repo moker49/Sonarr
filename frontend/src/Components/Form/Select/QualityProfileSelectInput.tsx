@@ -24,12 +24,14 @@ function createQualityProfilesSelector(
     ),
     (qualityProfiles: QualityProfilesAppState) => {
       const values: EnhancedSelectInputValue<number | string>[] =
-        qualityProfiles.items.map((qualityProfile) => {
-          return {
-            key: qualityProfile.id,
-            value: qualityProfile.name,
-          };
-        });
+        qualityProfiles.items
+          .filter((qualityProfile) => !qualityProfile.isComposite)
+          .map((qualityProfile) => {
+            return {
+              key: qualityProfile.id,
+              value: qualityProfile.name,
+            };
+          });
 
       if (includeNoChange) {
         values.unshift({

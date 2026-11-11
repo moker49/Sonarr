@@ -11,12 +11,12 @@ namespace NzbDrone.Core.Profiles.Qualities
     public interface ICompositeProfileDraftService
     {
         List<CompositeProfileVersion> Get(int profileId);
+        HashSet<int> GetProfileIds();
         List<CompositeProfileVersion> Save(int profileId, List<CompositeProfileVersion> versions);
         void Delete(int profileId);
     }
 
-    // Drafts are internal until all series, import-list, and legacy API paths can
-    // reject their use. They must not be exposed as assignable quality profiles.
+    // Drafts cannot be assigned until version-aware search and import are ready.
     public class CompositeProfileDraftService : ICompositeProfileDraftService
     {
         private readonly IMainDatabase _database;
@@ -30,6 +30,12 @@ namespace NzbDrone.Core.Profiles.Qualities
         {
             using var connection = _database.OpenConnection();
             return connection.Query<CompositeProfileVersion>("SELECT * FROM \"CompositeProfileVersions\" WHERE \"CompositeProfileId\" = @profileId ORDER BY \"Priority\"", new { profileId }).ToList();
+        }
+
+        public HashSet<int> GetProfileIds()
+        {
+            using var connection = _database.OpenConnection();
+            return connection.Query<int>("SELECT DISTINCT \"CompositeProfileId\" FROM \"CompositeProfileVersions\"").ToHashSet();
         }
 
         public List<CompositeProfileVersion> Save(int profileId, List<CompositeProfileVersion> versions)

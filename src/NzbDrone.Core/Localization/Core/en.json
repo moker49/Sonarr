@@ -768,6 +768,7 @@
   "GeneralSettingsSummary": "Port, SSL, username/password, proxy, analytics and updates",
   "Genres": "Genres",
   "Global": "Global",
+  "CompositeDraft": "Composite draft",
   "SizeSettingsFor": "Size Settings For",
   "UseGlobalValues": "Use global values",
   "CopyGlobalValues": "Copy global values",

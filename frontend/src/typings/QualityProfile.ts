@@ -10,6 +10,7 @@ export interface QualityProfileQualityItem {
 }
 
 interface QualityProfile {
+  isComposite?: boolean;
   name: string;
   upgradeAllowed: boolean;
   cutoff: number;
