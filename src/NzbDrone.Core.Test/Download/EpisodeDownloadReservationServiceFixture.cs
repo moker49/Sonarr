@@ -174,5 +174,33 @@ namespace NzbDrone.Core.Test.Download
             Subject.ForSeries(_series.Id)[0].State.Should().Be(EpisodeDownloadReservationState.Uncertain);
             Subject.GetEpisodeIds(reservation).Should().ContainSingle().Which.Should().Be(_first.Id);
         }
+
+        [Test]
+        public void definitive_rejection_keeps_history_but_allows_retry()
+        {
+            var reservation = Subject.Reserve(_sdr.Id, new[] { "guid:one", "title:one" }, new[] { _first.Id });
+            Subject.BeginDispatch(reservation, 42);
+            Subject.MarkDefinitivelyNotSubmitted(reservation, "Client explicitly rejected the job");
+
+            var history = Subject.ForSeries(_series.Id).Single();
+            history.State.Should().Be(EpisodeDownloadReservationState.Failed);
+            history.Note.Should().Be("Client explicitly rejected the job");
+            Subject.GetEpisodeIds(reservation).Should().BeEmpty();
+            Subject.HasUnboundForClient(42).Should().BeFalse();
+            Subject.Reserve(_sdr.Id, new[] { "guid:one", "title:one" }, new[] { _first.Id }).Should().BePositive();
+        }
+
+        [Test]
+        public void uncertainty_cannot_be_reclassified_as_definitive_failure()
+        {
+            var reservation = Subject.Reserve(_sdr.Id, "release", new[] { _first.Id });
+            Subject.BeginDispatch(reservation, 42);
+            Subject.MarkUncertain(reservation, "Timed out");
+
+            Action fail = () => Subject.MarkDefinitivelyNotSubmitted(reservation, "Claimed rejection");
+            fail.Should().Throw<InvalidOperationException>();
+            Subject.GetEpisodeIds(reservation).Should().ContainSingle();
+            Subject.HasUnboundForClient(42).Should().BeTrue();
+        }
     }
 }

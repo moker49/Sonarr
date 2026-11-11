@@ -36,6 +36,7 @@ namespace NzbDrone.Core.Download
         private readonly IEpisodeService _episodeService;
         private readonly IMediaFileService _mediaFileService;
         private readonly IRejectedImportService _rejectedImportService;
+        private readonly IEpisodeDownloadReservationService _reservations;
         private readonly Logger _logger;
 
         public CompletedDownloadService(IEventAggregator eventAggregator,
@@ -48,6 +49,7 @@ namespace NzbDrone.Core.Download
                                         IEpisodeService episodeService,
                                         IMediaFileService mediaFileService,
                                         IRejectedImportService rejectedImportService,
+                                        IEpisodeDownloadReservationService reservations,
                                         Logger logger)
         {
             _eventAggregator = eventAggregator;
@@ -60,11 +62,25 @@ namespace NzbDrone.Core.Download
             _episodeService = episodeService;
             _mediaFileService = mediaFileService;
             _rejectedImportService = rejectedImportService;
+            _reservations = reservations;
             _logger = logger;
         }
 
         public void Check(TrackedDownload trackedDownload)
         {
+            lock (EpisodeDownloadSynchronization.For(trackedDownload.DownloadClient, trackedDownload.DownloadItem?.DownloadId))
+            {
+                CheckCore(trackedDownload);
+            }
+        }
+
+        private void CheckCore(TrackedDownload trackedDownload)
+        {
+            if (BlockManagedImport(trackedDownload))
+            {
+                return;
+            }
+
             if (trackedDownload.DownloadItem.Status != DownloadItemStatus.Completed)
             {
                 return;
@@ -127,6 +143,19 @@ namespace NzbDrone.Core.Download
 
         public void Import(TrackedDownload trackedDownload)
         {
+            lock (EpisodeDownloadSynchronization.For(trackedDownload.DownloadClient, trackedDownload.DownloadItem?.DownloadId))
+            {
+                ImportCore(trackedDownload);
+            }
+        }
+
+        private void ImportCore(TrackedDownload trackedDownload)
+        {
+            if (BlockManagedImport(trackedDownload))
+            {
+                return;
+            }
+
             SetImportItem(trackedDownload);
 
             if (!ValidatePath(trackedDownload))
@@ -268,6 +297,18 @@ namespace NzbDrone.Core.Download
 
             _logger.Debug("Not all episodes have been imported for the release '{0}'", trackedDownload.DownloadItem.Title);
             return false;
+        }
+
+        private bool BlockManagedImport(TrackedDownload trackedDownload)
+        {
+            if (!trackedDownload.EpisodeDownloadReservationId.HasValue && !trackedDownload.SeriesVersionId.HasValue && !trackedDownload.HasUnresolvedReservation && !_reservations.HasUnboundForClient(trackedDownload.DownloadClient))
+            {
+                return false;
+            }
+
+            trackedDownload.Warn("Version-aware import is not yet available for this download.");
+            SetStateToImportBlocked(trackedDownload);
+            return true;
         }
 
         private void SetStateToImportBlocked(TrackedDownload trackedDownload)

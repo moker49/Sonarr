@@ -35,6 +35,9 @@ namespace NzbDrone.Core.Test.Download.CompletedDownloadServiceTests
 
             _trackedDownload = Builder<TrackedDownload>.CreateNew()
                     .With(c => c.State = TrackedDownloadState.Downloading)
+                    .With(c => c.EpisodeDownloadReservationId = null)
+                    .With(c => c.SeriesVersionId = null)
+                    .With(c => c.HasUnresolvedReservation = false)
                     .With(c => c.DownloadItem = completed)
                     .With(c => c.RemoteEpisode = remoteEpisode)
                     .Build();
@@ -67,6 +70,18 @@ namespace NzbDrone.Core.Test.Download.CompletedDownloadServiceTests
                 Series = new Series(),
                 Episodes = new List<Episode> { new Episode { Id = 1 } }
             };
+        }
+
+        [Test]
+        public void managed_download_is_not_advanced_to_ordinary_import()
+        {
+            _trackedDownload.EpisodeDownloadReservationId = 12;
+            _trackedDownload.SeriesVersionId = 34;
+
+            Subject.Check(_trackedDownload);
+
+            _trackedDownload.State.Should().Be(TrackedDownloadState.ImportBlocked);
+            Mocker.GetMock<IProvideImportItemService>().Verify(s => s.ProvideImportItem(It.IsAny<DownloadClientItem>(), It.IsAny<DownloadClientItem>()), Times.Never());
         }
 
         private void GivenNoGrabbedHistory()

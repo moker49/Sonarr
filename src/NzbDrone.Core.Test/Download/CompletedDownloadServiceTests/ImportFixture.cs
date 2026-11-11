@@ -43,6 +43,9 @@ namespace NzbDrone.Core.Test.Download.CompletedDownloadServiceTests
 
             _trackedDownload = Builder<TrackedDownload>.CreateNew()
                     .With(c => c.State = TrackedDownloadState.Downloading)
+                    .With(c => c.EpisodeDownloadReservationId = null)
+                    .With(c => c.SeriesVersionId = null)
+                    .With(c => c.HasUnresolvedReservation = false)
                     .With(c => c.DownloadItem = completed)
                     .With(c => c.RemoteEpisode = remoteEpisode)
                     .Build();
@@ -86,6 +89,30 @@ namespace NzbDrone.Core.Test.Download.CompletedDownloadServiceTests
                     _episode1
                 }
             };
+        }
+
+        [Test]
+        public void managed_download_cannot_use_ordinary_import_path()
+        {
+            _trackedDownload.EpisodeDownloadReservationId = 12;
+            _trackedDownload.SeriesVersionId = 34;
+
+            Subject.Import(_trackedDownload);
+
+            _trackedDownload.State.Should().Be(TrackedDownloadState.ImportBlocked);
+            Mocker.GetMock<IDownloadedEpisodesImportService>().Verify(s => s.ProcessPath(It.IsAny<string>(), It.IsAny<ImportMode>(), It.IsAny<Series>(), It.IsAny<DownloadClientItem>()), Times.Never());
+        }
+
+        [Test]
+        public void unresolved_client_dispatch_blocks_ordinary_import()
+        {
+            _trackedDownload.DownloadClient = 7;
+            Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.HasUnboundForClient(7)).Returns(true);
+
+            Subject.Import(_trackedDownload);
+
+            _trackedDownload.State.Should().Be(TrackedDownloadState.ImportBlocked);
+            Mocker.GetMock<IDownloadedEpisodesImportService>().Verify(s => s.ProcessPath(It.IsAny<string>(), It.IsAny<ImportMode>(), It.IsAny<Series>(), It.IsAny<DownloadClientItem>()), Times.Never());
         }
 
         private void GivenABadlyNamedDownload()

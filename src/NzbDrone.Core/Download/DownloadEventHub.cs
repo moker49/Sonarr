@@ -12,14 +12,17 @@ namespace NzbDrone.Core.Download
     {
         private readonly IConfigService _configService;
         private readonly IProvideDownloadClient _downloadClientProvider;
+        private readonly IEpisodeDownloadReservationService _reservations;
         private readonly Logger _logger;
 
         public DownloadEventHub(IConfigService configService,
             IProvideDownloadClient downloadClientProvider,
+            IEpisodeDownloadReservationService reservations,
             Logger logger)
         {
             _configService = configService;
             _downloadClientProvider = downloadClientProvider;
+            _reservations = reservations;
             _logger = logger;
         }
 
@@ -27,14 +30,25 @@ namespace NzbDrone.Core.Download
         {
             var trackedDownload = message.TrackedDownload;
 
-            if (trackedDownload == null ||
-                message.TrackedDownload.DownloadItem.Removed ||
-                !trackedDownload.DownloadItem.CanBeRemoved)
+            if (trackedDownload == null)
             {
                 return;
             }
 
-            var downloadClient = _downloadClientProvider.Get(message.TrackedDownload.DownloadClient);
+            lock (EpisodeDownloadSynchronization.For(trackedDownload.DownloadClient, trackedDownload.DownloadItem?.DownloadId))
+            {
+                HandleFailed(trackedDownload);
+            }
+        }
+
+        private void HandleFailed(TrackedDownload trackedDownload)
+        {
+            if (IsManaged(trackedDownload) || trackedDownload.DownloadItem.Removed || !trackedDownload.DownloadItem.CanBeRemoved)
+            {
+                return;
+            }
+
+            var downloadClient = _downloadClientProvider.Get(trackedDownload.DownloadClient);
             var definition = downloadClient.Definition as DownloadClientDefinition;
 
             if (!definition.RemoveFailedDownloads)
@@ -48,6 +62,19 @@ namespace NzbDrone.Core.Download
         public void Handle(DownloadCompletedEvent message)
         {
             var trackedDownload = message.TrackedDownload;
+            lock (EpisodeDownloadSynchronization.For(trackedDownload.DownloadClient, trackedDownload.DownloadItem?.DownloadId))
+            {
+                HandleCompleted(trackedDownload);
+            }
+        }
+
+        private void HandleCompleted(TrackedDownload trackedDownload)
+        {
+            if (IsManaged(trackedDownload))
+            {
+                return;
+            }
+
             var downloadClient = _downloadClientProvider.Get(trackedDownload.DownloadClient);
             var definition = downloadClient.Definition as DownloadClientDefinition;
 
@@ -65,12 +92,25 @@ namespace NzbDrone.Core.Download
                 return;
             }
 
-            RemoveFromDownloadClient(message.TrackedDownload, downloadClient);
+            RemoveFromDownloadClient(trackedDownload, downloadClient);
         }
 
         public void Handle(DownloadCanBeRemovedEvent message)
         {
             var trackedDownload = message.TrackedDownload;
+            lock (EpisodeDownloadSynchronization.For(trackedDownload.DownloadClient, trackedDownload.DownloadItem?.DownloadId))
+            {
+                HandleCanBeRemoved(trackedDownload);
+            }
+        }
+
+        private void HandleCanBeRemoved(TrackedDownload trackedDownload)
+        {
+            if (IsManaged(trackedDownload))
+            {
+                return;
+            }
+
             var downloadClient = _downloadClientProvider.Get(trackedDownload.DownloadClient);
             var definition = downloadClient.Definition as DownloadClientDefinition;
 
@@ -81,7 +121,12 @@ namespace NzbDrone.Core.Download
                 return;
             }
 
-            RemoveFromDownloadClient(message.TrackedDownload, downloadClient);
+            RemoveFromDownloadClient(trackedDownload, downloadClient);
+        }
+
+        private bool IsManaged(TrackedDownload trackedDownload)
+        {
+            return trackedDownload.EpisodeDownloadReservationId.HasValue || trackedDownload.SeriesVersionId.HasValue || trackedDownload.HasUnresolvedReservation || _reservations.HasUnboundForClient(trackedDownload.DownloadClient);
         }
 
         private void RemoveFromDownloadClient(TrackedDownload trackedDownload, IDownloadClient downloadClient)

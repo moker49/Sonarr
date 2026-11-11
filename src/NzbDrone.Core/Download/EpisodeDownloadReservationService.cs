@@ -16,10 +16,12 @@ namespace NzbDrone.Core.Download
         List<EpisodeDownloadReservation> ForSeries(int seriesId);
         List<int> GetEpisodeIds(int reservationId);
         EpisodeDownloadReservation FindByClientDownload(int clientId, string downloadId);
+        bool HasUnboundForClient(int clientId);
         List<EpisodeDownloadReservation> FindUnboundCandidates(int clientId, IReadOnlyCollection<string> releaseKeys);
         void BeginDispatch(int reservationId, int clientId);
         void Submitted(int reservationId, string downloadId);
         void MarkUncertain(int reservationId, string note);
+        void MarkDefinitivelyNotSubmitted(int reservationId, string note);
         void Release(int reservationId);
     }
 
@@ -155,6 +157,17 @@ namespace NzbDrone.Core.Download
             }).ToList();
         }
 
+        public bool HasUnboundForClient(int clientId)
+        {
+            if (clientId <= 0)
+            {
+                return false;
+            }
+
+            using var connection = _database.OpenConnection();
+            return connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeDownloadReservations\" WHERE \"DownloadClientId\" = @clientId AND \"DownloadId\" IS NULL AND \"State\" IN @states", new { clientId, states = new[] { (int)EpisodeDownloadReservationState.Dispatching, (int)EpisodeDownloadReservationState.Uncertain } }) != 0;
+        }
+
         public void BeginDispatch(int reservationId, int clientId)
         {
             if (clientId <= 0)
@@ -183,6 +196,34 @@ namespace NzbDrone.Core.Download
             }
 
             ChangeState(reservationId, EpisodeDownloadReservationState.Dispatching, EpisodeDownloadReservationState.Uncertain, null, null, note);
+        }
+
+        // Caller must have definitive evidence that no client accepted the job.
+        // A timeout, restart, or ambiguous client response is not such evidence.
+        public void MarkDefinitivelyNotSubmitted(int reservationId, string note)
+        {
+            if (string.IsNullOrWhiteSpace(note) || note.Length > 255)
+            {
+                throw new ArgumentException("A short explanation is required.", nameof(note));
+            }
+
+            using var connection = _database.OpenConnection();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            var seriesId = connection.QuerySingleOrDefault<int?>("SELECT \"SeriesId\" FROM \"EpisodeDownloadReservations\" WHERE \"Id\" = @reservationId", new { reservationId }, transaction);
+            if (!seriesId.HasValue || connection.Execute("UPDATE \"Series\" SET \"Id\" = \"Id\" WHERE \"Id\" = @seriesId", new { seriesId }, transaction) != 1)
+            {
+                throw new InvalidOperationException("The reservation or its series no longer exists.");
+            }
+
+            var changed = connection.Execute("UPDATE \"EpisodeDownloadReservations\" SET \"State\" = @failed, \"UpdatedAt\" = @updatedAt, \"Note\" = @note WHERE \"Id\" = @reservationId AND \"SeriesId\" = @seriesId AND \"DownloadId\" IS NULL AND \"State\" IN @states", new { failed = (int)EpisodeDownloadReservationState.Failed, updatedAt = DateTime.UtcNow, note, reservationId, seriesId, states = new[] { (int)EpisodeDownloadReservationState.Prepared, (int)EpisodeDownloadReservationState.Dispatching } }, transaction);
+            if (changed != 1)
+            {
+                throw new InvalidOperationException("Only a prepared or definitively rejected unbound dispatch can be marked failed.");
+            }
+
+            connection.Execute("DELETE FROM \"EpisodeDownloadReservationItems\" WHERE \"ReservationId\" = @reservationId", new { reservationId }, transaction);
+            connection.Execute("DELETE FROM \"EpisodeDownloadReservationKeys\" WHERE \"ReservationId\" = @reservationId", new { reservationId }, transaction);
+            transaction.Commit();
         }
 
         public void Handle(ApplicationStartedEvent message)

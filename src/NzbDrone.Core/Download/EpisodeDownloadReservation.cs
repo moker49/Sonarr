@@ -8,7 +8,8 @@ namespace NzbDrone.Core.Download
         Prepared = 0,
         Dispatching = 1,
         Submitted = 2,
-        Uncertain = 3
+        Uncertain = 3,
+        Failed = 4
     }
 
     public class EpisodeDownloadReservation : ModelBase

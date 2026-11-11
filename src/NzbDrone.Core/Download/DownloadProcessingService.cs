@@ -15,6 +15,7 @@ namespace NzbDrone.Core.Download
         private readonly IFailedDownloadService _failedDownloadService;
         private readonly ITrackedDownloadService _trackedDownloadService;
         private readonly IEventAggregator _eventAggregator;
+        private readonly IEpisodeDownloadReservationService _reservations;
         private readonly Logger _logger;
 
         public DownloadProcessingService(IConfigService configService,
@@ -22,6 +23,7 @@ namespace NzbDrone.Core.Download
                                          IFailedDownloadService failedDownloadService,
                                          ITrackedDownloadService trackedDownloadService,
                                          IEventAggregator eventAggregator,
+                                         IEpisodeDownloadReservationService reservations,
                                          Logger logger)
         {
             _configService = configService;
@@ -29,18 +31,25 @@ namespace NzbDrone.Core.Download
             _failedDownloadService = failedDownloadService;
             _trackedDownloadService = trackedDownloadService;
             _eventAggregator = eventAggregator;
+            _reservations = reservations;
             _logger = logger;
         }
 
         private void RemoveCompletedDownloads()
         {
             var trackedDownloads = _trackedDownloadService.GetTrackedDownloads()
-                                                          .Where(t => !t.DownloadItem.Removed && t.DownloadItem.CanBeRemoved && t.State == TrackedDownloadState.Imported)
+                                                          .Where(t => !t.DownloadItem.Removed && t.DownloadItem.CanBeRemoved && t.State == TrackedDownloadState.Imported && !t.EpisodeDownloadReservationId.HasValue && !t.SeriesVersionId.HasValue && !t.HasUnresolvedReservation)
                                                           .ToList();
 
             foreach (var trackedDownload in trackedDownloads)
             {
-                _eventAggregator.PublishEvent(new DownloadCanBeRemovedEvent(trackedDownload));
+                lock (EpisodeDownloadSynchronization.For(trackedDownload.DownloadClient, trackedDownload.DownloadItem?.DownloadId))
+                {
+                    if (!trackedDownload.DownloadItem.Removed && trackedDownload.DownloadItem.CanBeRemoved && trackedDownload.State == TrackedDownloadState.Imported && !trackedDownload.EpisodeDownloadReservationId.HasValue && !trackedDownload.SeriesVersionId.HasValue && !trackedDownload.HasUnresolvedReservation && !_reservations.HasUnboundForClient(trackedDownload.DownloadClient))
+                    {
+                        _eventAggregator.PublishEvent(new DownloadCanBeRemovedEvent(trackedDownload));
+                    }
+                }
             }
         }
 
@@ -55,17 +64,9 @@ namespace NzbDrone.Core.Download
             {
                 try
                 {
-                    // Process completed items followed by failed, this allows failed imports to have
-                    // their state changed and be processed immediately instead of the next execution.
-
-                    if (enableCompletedDownloadHandling && trackedDownload.State == TrackedDownloadState.ImportPending)
+                    lock (EpisodeDownloadSynchronization.For(trackedDownload.DownloadClient, trackedDownload.DownloadItem?.DownloadId))
                     {
-                        _completedDownloadService.Import(trackedDownload);
-                    }
-
-                    if (trackedDownload.State == TrackedDownloadState.FailedPending)
-                    {
-                        _failedDownloadService.ProcessFailed(trackedDownload);
+                        ProcessTrackedDownload(trackedDownload, enableCompletedDownloadHandling);
                     }
                 }
                 catch (Exception e)
@@ -78,6 +79,28 @@ namespace NzbDrone.Core.Download
             RemoveCompletedDownloads();
 
             _eventAggregator.PublishEvent(new DownloadsProcessedEvent());
+        }
+
+        private void ProcessTrackedDownload(TrackedDownload trackedDownload, bool enableCompletedDownloadHandling)
+        {
+            if (trackedDownload.EpisodeDownloadReservationId.HasValue || trackedDownload.SeriesVersionId.HasValue || trackedDownload.HasUnresolvedReservation || _reservations.HasUnboundForClient(trackedDownload.DownloadClient))
+            {
+                trackedDownload.Warn("Version-aware download processing is not yet available for this download.");
+                trackedDownload.State = TrackedDownloadState.ImportBlocked;
+                return;
+            }
+
+            // Process completed items followed by failed, this allows failed imports to have
+            // their state changed and be processed immediately instead of the next execution.
+            if (enableCompletedDownloadHandling && trackedDownload.State == TrackedDownloadState.ImportPending)
+            {
+                _completedDownloadService.Import(trackedDownload);
+            }
+
+            if (trackedDownload.State == TrackedDownloadState.FailedPending)
+            {
+                _failedDownloadService.ProcessFailed(trackedDownload);
+            }
         }
     }
 }

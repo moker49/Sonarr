@@ -20,6 +20,38 @@ namespace NzbDrone.Core.Test.Download.TrackedDownloads
     [TestFixture]
     public class TrackedDownloadServiceFixture : CoreTest<TrackedDownloadService>
     {
+        [Test]
+        public void restores_reservation_and_blocks_legacy_imported_state()
+        {
+            var client = new DownloadClientDefinition { Id = 7, Protocol = DownloadProtocol.Usenet };
+            var item = new DownloadClientItem { DownloadId = "job", Title = "Unmatched", DownloadClientInfo = new DownloadClientItemClientInfo { Name = "client" } };
+            Mocker.GetMock<IHistoryService>().Setup(s => s.FindByDownloadId(It.IsAny<string>())).Returns(new List<EpisodeHistory>());
+            var tracked = Subject.TrackDownload(client, item);
+            tracked.State = TrackedDownloadState.Imported;
+            Mocker.GetMock<IEpisodeDownloadReservationService>()
+                .Setup(s => s.FindByClientDownload(7, "job"))
+                .Returns(new EpisodeDownloadReservation { Id = 12, SeriesVersionId = 34 });
+
+            var restored = Subject.TrackDownload(client, item);
+
+            restored.EpisodeDownloadReservationId.Should().Be(12);
+            restored.SeriesVersionId.Should().Be(34);
+            restored.State.Should().Be(TrackedDownloadState.ImportBlocked);
+        }
+
+        [Test]
+        public void does_not_reuse_a_tracked_job_from_a_different_client_with_the_same_id()
+        {
+            var first = new DownloadClientDefinition { Id = 7, Protocol = DownloadProtocol.Usenet };
+            var second = new DownloadClientDefinition { Id = 8, Protocol = DownloadProtocol.Usenet };
+            var item = new DownloadClientItem { DownloadId = "job", Title = "Unmatched", DownloadClientInfo = new DownloadClientItemClientInfo { Name = "client" } };
+            Mocker.GetMock<IHistoryService>().Setup(s => s.FindByDownloadId(It.IsAny<string>())).Returns(new List<EpisodeHistory>());
+            Subject.TrackDownload(first, item);
+
+            Assert.Throws<System.InvalidOperationException>(() => Subject.TrackDownload(second, item));
+            Subject.Find("job").DownloadClient.Should().Be(7);
+        }
+
         private void GivenDownloadHistory()
         {
             Mocker.GetMock<IHistoryService>()

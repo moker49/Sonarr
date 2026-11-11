@@ -37,6 +37,7 @@ namespace NzbDrone.Core.Download.TrackedDownloads
         private readonly IDownloadHistoryService _downloadHistoryService;
         private readonly IRemoteEpisodeAggregationService _aggregationService;
         private readonly ICustomFormatCalculationService _formatCalculator;
+        private readonly IEpisodeDownloadReservationService _reservations;
         private readonly Logger _logger;
         private readonly ICached<TrackedDownload> _cache;
 
@@ -47,6 +48,7 @@ namespace NzbDrone.Core.Download.TrackedDownloads
                                       IEventAggregator eventAggregator,
                                       IDownloadHistoryService downloadHistoryService,
                                       IRemoteEpisodeAggregationService aggregationService,
+                                      IEpisodeDownloadReservationService reservations,
                                       Logger logger)
         {
             _parsingService = parsingService;
@@ -55,6 +57,7 @@ namespace NzbDrone.Core.Download.TrackedDownloads
             _eventAggregator = eventAggregator;
             _downloadHistoryService = downloadHistoryService;
             _aggregationService = aggregationService;
+            _reservations = reservations;
             _cache = cacheManager.GetCache<TrackedDownload>(GetType());
             _logger = logger;
         }
@@ -88,7 +91,22 @@ namespace NzbDrone.Core.Download.TrackedDownloads
 
         public TrackedDownload TrackDownload(DownloadClientDefinition downloadClient, DownloadClientItem downloadItem)
         {
+            lock (EpisodeDownloadSynchronization.For(downloadClient.Id, downloadItem.DownloadId))
+            {
+                return TrackDownloadCore(downloadClient, downloadItem);
+            }
+        }
+
+        private TrackedDownload TrackDownloadCore(DownloadClientDefinition downloadClient, DownloadClientItem downloadItem)
+        {
             var existingItem = Find(downloadItem.DownloadId);
+
+            if (existingItem != null && existingItem.DownloadClient != downloadClient.Id)
+            {
+                // The legacy cache is keyed by download ID alone. Do not reuse a
+                // different client's tracked job or its reservation identity.
+                throw new InvalidOperationException("The download ID is already tracked for a different client.");
+            }
 
             if (existingItem != null && existingItem.State != TrackedDownloadState.Downloading)
             {
@@ -96,6 +114,7 @@ namespace NzbDrone.Core.Download.TrackedDownloads
 
                 existingItem.DownloadItem = downloadItem;
                 existingItem.IsTrackable = true;
+                RestoreReservation(existingItem);
 
                 return existingItem;
             }
@@ -201,10 +220,26 @@ namespace NzbDrone.Core.Download.TrackedDownloads
                 trackedDownload.Warn("Unable to parse episodes from title");
             }
 
+            RestoreReservation(trackedDownload);
             LogItemChange(trackedDownload, existingItem?.DownloadItem, trackedDownload.DownloadItem);
 
             _cache.Set(trackedDownload.DownloadItem.DownloadId, trackedDownload);
             return trackedDownload;
+        }
+
+        private void RestoreReservation(TrackedDownload tracked)
+        {
+            var reservation = _reservations.FindByClientDownload(tracked.DownloadClient, tracked.DownloadItem.DownloadId);
+            tracked.EpisodeDownloadReservationId = reservation?.Id;
+            tracked.SeriesVersionId = reservation?.SeriesVersionId;
+            // Until a timed-out dispatch is reconciled, an unmatched item from
+            // the same client could be that job even if its title or size changed.
+            tracked.HasUnresolvedReservation = reservation == null && _reservations.HasUnboundForClient(tracked.DownloadClient);
+            if ((reservation != null || tracked.HasUnresolvedReservation) && tracked.State != TrackedDownloadState.Downloading)
+            {
+                // Legacy imported/failed history must not remove or process a managed job.
+                tracked.State = TrackedDownloadState.ImportBlocked;
+            }
         }
 
         public List<TrackedDownload> GetTrackedDownloads()
