@@ -4,6 +4,7 @@ using System.Linq;
 using FluentValidation.Results;
 using NLog;
 using NzbDrone.Core.Messaging.Events;
+using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.ThingiProvider;
 
 namespace NzbDrone.Core.ImportLists
@@ -16,9 +17,11 @@ namespace NzbDrone.Core.ImportLists
     public class ImportListFactory : ProviderFactory<IImportList, ImportListDefinition>, IImportListFactory
     {
         private readonly IImportListStatusService _importListStatusService;
+        private readonly ICompositeProfilePolicy _compositePolicy;
         private readonly Logger _logger;
 
         public ImportListFactory(IImportListStatusService importListStatusService,
+                              ICompositeProfilePolicy compositePolicy,
                               IImportListRepository providerRepository,
                               IEnumerable<IImportList> providers,
                               IServiceProvider container,
@@ -27,12 +30,41 @@ namespace NzbDrone.Core.ImportLists
             : base(providerRepository, providers, container, eventAggregator, logger)
         {
             _importListStatusService = importListStatusService;
+            _compositePolicy = compositePolicy;
             _logger = logger;
         }
 
         protected override List<ImportListDefinition> Active()
         {
             return base.Active().Where(c => c.Enable).ToList();
+        }
+
+        public override ImportListDefinition Create(ImportListDefinition definition)
+        {
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                _compositePolicy.EnsureAssignable(new[] { definition.QualityProfileId });
+                return base.Create(definition);
+            }
+        }
+
+        public override void Update(ImportListDefinition definition)
+        {
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                _compositePolicy.EnsureAssignable(new[] { definition.QualityProfileId });
+                base.Update(definition);
+            }
+        }
+
+        public override IEnumerable<ImportListDefinition> Update(IEnumerable<ImportListDefinition> definitions)
+        {
+            var items = definitions.ToList();
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                _compositePolicy.EnsureAssignable(items.Select(d => d.QualityProfileId));
+                return base.Update(items);
+            }
         }
 
         public override void SetProviderCharacteristics(IImportList provider, ImportListDefinition definition)

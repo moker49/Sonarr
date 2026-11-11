@@ -33,18 +33,21 @@ namespace NzbDrone.Core.Profiles.Qualities
         private readonly IImportListFactory _importListFactory;
         private readonly ICustomFormatService _formatService;
         private readonly ISeriesService _seriesService;
+        private readonly ICompositeProfilePolicy _compositePolicy;
         private readonly Logger _logger;
 
         public QualityProfileService(IQualityProfileRepository qualityProfileRepository,
                                      IImportListFactory importListFactory,
                                      ICustomFormatService formatService,
                                      ISeriesService seriesService,
+                                     ICompositeProfilePolicy compositePolicy,
                                      Logger logger)
         {
             _qualityProfileRepository = qualityProfileRepository;
             _importListFactory = importListFactory;
             _formatService = formatService;
             _seriesService = seriesService;
+            _compositePolicy = compositePolicy;
             _logger = logger;
         }
 
@@ -73,6 +76,15 @@ namespace NzbDrone.Core.Profiles.Qualities
 
         public void Delete(int id)
         {
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                DeleteProfile(id);
+            }
+        }
+
+        private void DeleteProfile(int id)
+        {
+            _compositePolicy.EnsureDeletable(id);
             if (_seriesService.GetAllSeries().Any(c => c.QualityProfileId == id) || _importListFactory.All().Any(c => c.QualityProfileId == id))
             {
                 var profile = _qualityProfileRepository.Get(id);

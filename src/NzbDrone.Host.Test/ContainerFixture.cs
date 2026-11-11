@@ -20,6 +20,8 @@ using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Messaging.Commands;
 using NzbDrone.Core.Messaging.Events;
+using NzbDrone.Core.Profiles.Qualities;
+using NzbDrone.Core.Tv;
 using NzbDrone.Host;
 using NzbDrone.SignalR;
 using NzbDrone.Test.Common;
@@ -60,6 +62,16 @@ namespace NzbDrone.App.Test
         public void should_be_able_to_resolve_indexers()
         {
             _container.GetRequiredService<IEnumerable<IIndexer>>().Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void should_resolve_composite_profile_and_series_services()
+        {
+            _container.GetRequiredService<ICompositeProfileDraftService>().Should().NotBeNull();
+            _container.GetRequiredService<ICompositeProfilePolicy>().Should().NotBeNull();
+            _container.GetRequiredService<ISeriesService>().Should().NotBeNull();
+            _container.GetRequiredService<IVersionEpisodeFileAssignmentService>().Should().NotBeNull();
+            _container.GetRequiredService<IEpisodeVersionResolver>().Should().NotBeNull();
         }
 
         [Test]

@@ -5,6 +5,7 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Core.AutoTagging;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Parser;
+using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.Tv.Events;
 
 namespace NzbDrone.Core.Tv
@@ -42,6 +43,7 @@ namespace NzbDrone.Core.Tv
         private readonly IEpisodeService _episodeService;
         private readonly IBuildSeriesPaths _seriesPathBuilder;
         private readonly IAutoTaggingService _autoTaggingService;
+        private readonly ICompositeProfilePolicy _compositePolicy;
         private readonly Logger _logger;
 
         public SeriesService(ISeriesRepository seriesRepository,
@@ -49,6 +51,7 @@ namespace NzbDrone.Core.Tv
                              IEpisodeService episodeService,
                              IBuildSeriesPaths seriesPathBuilder,
                              IAutoTaggingService autoTaggingService,
+                             ICompositeProfilePolicy compositePolicy,
                              Logger logger)
         {
             _seriesRepository = seriesRepository;
@@ -56,6 +59,7 @@ namespace NzbDrone.Core.Tv
             _episodeService = episodeService;
             _seriesPathBuilder = seriesPathBuilder;
             _autoTaggingService = autoTaggingService;
+            _compositePolicy = compositePolicy;
             _logger = logger;
         }
 
@@ -71,7 +75,11 @@ namespace NzbDrone.Core.Tv
 
         public Series AddSeries(Series newSeries)
         {
-            _seriesRepository.Insert(newSeries);
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                _compositePolicy.EnsureAssignable(new[] { newSeries.QualityProfileId });
+                _seriesRepository.Insert(newSeries);
+            }
             _eventAggregator.PublishEvent(new SeriesAddedEvent(GetSeries(newSeries.Id)));
 
             return newSeries;
@@ -79,7 +87,11 @@ namespace NzbDrone.Core.Tv
 
         public List<Series> AddSeries(List<Series> newSeries)
         {
-            _seriesRepository.InsertMany(newSeries);
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                _compositePolicy.EnsureAssignable(newSeries.Select(s => s.QualityProfileId));
+                _seriesRepository.InsertMany(newSeries);
+            }
             _eventAggregator.PublishEvent(new SeriesImportedEvent(newSeries.Select(s => s.Id).ToList()));
 
             return newSeries;
@@ -196,6 +208,15 @@ namespace NzbDrone.Core.Tv
         // TODO: Remove when seasons are split from series (or we come up with a better way to address this)
         public Series UpdateSeries(Series series, bool updateEpisodesToMatchSeason = true, bool publishUpdatedEvent = true)
         {
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                _compositePolicy.EnsureAssignable(new[] { series.QualityProfileId });
+                return UpdateSeriesCore(series, updateEpisodesToMatchSeason, publishUpdatedEvent);
+            }
+        }
+
+        private Series UpdateSeriesCore(Series series, bool updateEpisodesToMatchSeason, bool publishUpdatedEvent)
+        {
             var storedSeries = GetSeries(series.Id);
 
             var episodeMonitoredChanged = false;
@@ -228,6 +249,15 @@ namespace NzbDrone.Core.Tv
         }
 
         public List<Series> UpdateSeries(List<Series> series, bool useExistingRelativeFolder)
+        {
+            lock (CompositeProfileSynchronization.SyncRoot)
+            {
+                _compositePolicy.EnsureAssignable(series.Select(s => s.QualityProfileId));
+                return UpdateSeriesCore(series, useExistingRelativeFolder);
+            }
+        }
+
+        private List<Series> UpdateSeriesCore(List<Series> series, bool useExistingRelativeFolder)
         {
             _logger.Debug("Updating {0} series", series.Count);
 

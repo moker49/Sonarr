@@ -88,6 +88,17 @@ namespace NzbDrone.Core.Test.Profiles
         }
 
         [Test]
+        public void should_not_delete_profile_referenced_by_composite_draft()
+        {
+            Mocker.GetMock<ICompositeProfilePolicy>()
+                .Setup(p => p.EnsureDeletable(1))
+                .Throws<System.InvalidOperationException>();
+
+            Assert.Throws<System.InvalidOperationException>(() => Subject.Delete(1));
+            Mocker.GetMock<IQualityProfileRepository>().Verify(c => c.Delete(It.IsAny<int>()), Times.Never());
+        }
+
+        [Test]
         public void should_not_be_able_to_delete_profile_if_assigned_to_import_list()
         {
             var profile = Builder<QualityProfile>.CreateNew()
