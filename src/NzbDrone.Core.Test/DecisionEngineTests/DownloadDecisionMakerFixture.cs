@@ -91,7 +91,7 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
         }
 
         [Test]
-        public void evaluates_requested_version_context_but_blocks_dispatch_until_ready()
+        public void approves_requested_version_context_when_empty_and_specifications_pass()
         {
             var criteria = new SingleEpisodeSearchCriteria { Series = _remoteEpisode.Series, SeriesVersionId = 7 };
             var context = new RemoteEpisode { Series = _remoteEpisode.Series, Episodes = _remoteEpisode.Episodes, Release = _reports[0], SeriesVersionId = 7 };
@@ -102,9 +102,23 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             var decision = Subject.GetSearchDecision(_reports, criteria).Single();
 
             decision.RemoteEpisode.Should().BeSameAs(context);
-            decision.Approved.Should().BeFalse();
-            decision.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.VersionedDownloadsNotReady);
+            decision.Approved.Should().BeTrue();
             _pass1.Verify(c => c.IsSatisfiedBy(context, criteria), Times.Once());
+        }
+
+        [Test]
+        public void targeted_search_rejects_a_pack_with_any_occupied_version_slot()
+        {
+            var criteria = new SingleEpisodeSearchCriteria { Series = _remoteEpisode.Series, SeriesVersionId = 7 };
+            var context = new RemoteEpisode { Series = _remoteEpisode.Series, Episodes = new List<Episode> { new Episode { EpisodeFileId = 99 } }, Release = _reports[0], SeriesVersionId = 7 };
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(c => c.ForVersion(_remoteEpisode, 7)).Returns(context);
+            _pass1.Setup(c => c.IsSatisfiedBy(context, criteria)).Returns(DownloadSpecDecision.Accept);
+            GivenSpecifications(_pass1);
+
+            var decision = Subject.GetSearchDecision(_reports, criteria).Single();
+
+            decision.Approved.Should().BeFalse();
+            decision.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.VersionReplacementNotReady);
         }
 
         [Test]

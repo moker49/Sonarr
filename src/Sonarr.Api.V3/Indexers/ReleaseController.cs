@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
@@ -81,7 +82,13 @@ namespace Sonarr.Api.V3.Indexers
 
             if (remoteEpisode.SeriesVersionId.HasValue || release.SeriesVersionId.HasValue)
             {
-                throw new NzbDroneClientException(HttpStatusCode.Conflict, "Version-aware download processing is not yet available.");
+                if (remoteEpisode.SeriesVersionId != release.SeriesVersionId || release.ShouldOverride == true || remoteEpisode.Series == null || remoteEpisode.Episodes.Empty() ||
+                    (release.SeriesId.HasValue && release.SeriesId.Value != remoteEpisode.Series.Id) ||
+                    (release.EpisodeId.HasValue && remoteEpisode.Episodes.All(e => e.Id != release.EpisodeId.Value)) ||
+                    (release.EpisodeIds != null && !remoteEpisode.Episodes.Select(e => e.Id).ToHashSet().SetEquals(release.EpisodeIds)))
+                {
+                    throw new NzbDroneClientException(HttpStatusCode.Conflict, "The version release identity cannot be overridden; search again for the intended version and episodes.");
+                }
             }
 
             try
@@ -168,6 +175,10 @@ namespace Sonarr.Api.V3.Indexers
             {
                 _logger.Error(ex, ex.Message);
                 throw new NzbDroneClientException(HttpStatusCode.Conflict, "Getting release from indexer failed");
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.Conflict, ex.Message, ex);
             }
 
             return release;

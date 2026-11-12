@@ -153,13 +153,11 @@ namespace NzbDrone.Core.DecisionEngine
                             }
 
                             decision = EvaluateMappedEpisode(remoteEpisode, report, searchCriteria);
-                            if (searchCriteria.SeriesVersionId.HasValue)
+                            if (searchCriteria.SeriesVersionId.HasValue && remoteEpisode.Episodes.Any(e => e.EpisodeFileId != 0))
                             {
-                                // Search evaluation can be exercised safely before the
-                                // version-aware dispatch and import pipeline is enabled.
                                 decision = new DownloadDecision(remoteEpisode, decision.Rejections.Concat(new[]
                                 {
-                                    new DownloadRejection(DownloadRejectionReason.VersionedDownloadsNotReady, "Version-aware download processing is not yet available.")
+                                    new DownloadRejection(DownloadRejectionReason.VersionReplacementNotReady, "Version replacement downloads are not yet available; all episode slots must be empty.")
                                 }).ToArray());
                             }
                         }
