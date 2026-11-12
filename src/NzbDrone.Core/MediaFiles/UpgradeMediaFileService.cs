@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using NLog;
@@ -5,6 +6,7 @@ using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.MediaFiles.EpisodeImport;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Tv;
 
 namespace NzbDrone.Core.MediaFiles
 {
@@ -19,18 +21,21 @@ namespace NzbDrone.Core.MediaFiles
         private readonly IMediaFileService _mediaFileService;
         private readonly IMoveEpisodeFiles _episodeFileMover;
         private readonly IDiskProvider _diskProvider;
+        private readonly IVersionEpisodeFileAssignmentService _versionFiles;
         private readonly Logger _logger;
 
         public UpgradeMediaFileService(IRecycleBinProvider recycleBinProvider,
                                        IMediaFileService mediaFileService,
                                        IMoveEpisodeFiles episodeFileMover,
                                        IDiskProvider diskProvider,
+                                       IVersionEpisodeFileAssignmentService versionFiles,
                                        Logger logger)
         {
             _recycleBinProvider = recycleBinProvider;
             _mediaFileService = mediaFileService;
             _episodeFileMover = episodeFileMover;
             _diskProvider = diskProvider;
+            _versionFiles = versionFiles;
             _logger = logger;
         }
 
@@ -43,6 +48,12 @@ namespace NzbDrone.Core.MediaFiles
                                             .Where(e => e != null)
                                             .GroupBy(e => e.Id)
                                             .ToList();
+
+            // Check the entire pack before touching any old file on disk.
+            if (existingFiles.Any(group => _versionFiles.IsOwnedFile(group.Key)))
+            {
+                throw new InvalidOperationException("Version-owned episode files cannot be replaced until version-aware import is available.");
+            }
 
             var rootFolder = _diskProvider.GetParentFolder(localEpisode.Series.Path);
 

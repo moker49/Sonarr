@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,12 +31,14 @@ namespace NzbDrone.Core.MediaFiles
     {
         private readonly IEventAggregator _eventAggregator;
         private readonly IMediaFileRepository _mediaFileRepository;
+        private readonly IVersionEpisodeFileAssignmentService _versionFiles;
         private readonly Logger _logger;
 
-        public MediaFileService(IMediaFileRepository mediaFileRepository, IEventAggregator eventAggregator, Logger logger)
+        public MediaFileService(IMediaFileRepository mediaFileRepository, IEventAggregator eventAggregator, IVersionEpisodeFileAssignmentService versionFiles, Logger logger)
         {
             _mediaFileRepository = mediaFileRepository;
             _eventAggregator = eventAggregator;
+            _versionFiles = versionFiles;
             _logger = logger;
         }
 
@@ -58,6 +61,11 @@ namespace NzbDrone.Core.MediaFiles
 
         public void Delete(EpisodeFile episodeFile, DeleteMediaFileReason reason)
         {
+            if (_versionFiles.IsOwnedFile(episodeFile.Id))
+            {
+                throw new InvalidOperationException("Version-owned episode files cannot be removed until version-aware deletion is available.");
+            }
+
             // Little hack so we have the episodes and series attached for the event consumers
             episodeFile.Episodes.LazyLoad();
             episodeFile.Path = Path.Combine(episodeFile.Series.Value.Path, episodeFile.RelativePath);

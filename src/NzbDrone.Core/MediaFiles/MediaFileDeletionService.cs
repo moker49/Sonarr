@@ -29,6 +29,7 @@ namespace NzbDrone.Core.MediaFiles
         private readonly ISeriesService _seriesService;
         private readonly IConfigService _configService;
         private readonly IEventAggregator _eventAggregator;
+        private readonly IVersionEpisodeFileAssignmentService _versionFiles;
         private readonly Logger _logger;
 
         public MediaFileDeletionService(IDiskProvider diskProvider,
@@ -37,6 +38,7 @@ namespace NzbDrone.Core.MediaFiles
                                         ISeriesService seriesService,
                                         IConfigService configService,
                                         IEventAggregator eventAggregator,
+                                        IVersionEpisodeFileAssignmentService versionFiles,
                                         Logger logger)
         {
             _diskProvider = diskProvider;
@@ -45,11 +47,17 @@ namespace NzbDrone.Core.MediaFiles
             _seriesService = seriesService;
             _configService = configService;
             _eventAggregator = eventAggregator;
+            _versionFiles = versionFiles;
             _logger = logger;
         }
 
         public void DeleteEpisodeFile(Series series, EpisodeFile episodeFile)
         {
+            if (_versionFiles.IsOwnedFile(episodeFile.Id))
+            {
+                throw new NzbDroneClientException(HttpStatusCode.Conflict, "Version-owned episode files cannot be removed until version-aware deletion is available.");
+            }
+
             var fullPath = Path.Combine(series.Path, episodeFile.RelativePath);
             var rootFolder = _diskProvider.GetParentFolder(series.Path);
 

@@ -11,6 +11,7 @@ namespace NzbDrone.Core.Tv
     {
         void AssignUnoccupiedFile(int seriesVersionId, int episodeFileId, IReadOnlyCollection<int> episodeIds);
         HashSet<int> GetOwnedFileIds(int seriesId);
+        bool IsOwnedFile(int episodeFileId);
     }
 
     public class VersionEpisodeFileAssignmentService : IVersionEpisodeFileAssignmentService
@@ -28,6 +29,12 @@ namespace NzbDrone.Core.Tv
             return connection.Query<int>(@"SELECT vf.""EpisodeFileId"" FROM ""VersionEpisodeFiles"" vf
                 JOIN ""EpisodeFiles"" f ON f.""Id"" = vf.""EpisodeFileId""
                 WHERE f.""SeriesId"" = @seriesId", new { seriesId }).ToHashSet();
+        }
+
+        public bool IsOwnedFile(int episodeFileId)
+        {
+            using var connection = _database.OpenConnection();
+            return connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"VersionEpisodeFiles\" WHERE \"EpisodeFileId\" = @episodeFileId", new { episodeFileId }) != 0;
         }
 
         // This is intentionally limited to empty slots. Replacement requires its own

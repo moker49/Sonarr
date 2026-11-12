@@ -14,6 +14,7 @@ using NzbDrone.Core.Messaging.Commands;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
+using NzbDrone.Core.Tv;
 
 namespace NzbDrone.Core.MediaFiles.EpisodeImport
 {
@@ -31,6 +32,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
         private readonly IDiskProvider _diskProvider;
         private readonly IHistoryService _historyService;
         private readonly IEpisodeDownloadReservationService _reservations;
+        private readonly IVersionEpisodeFileAssignmentService _versionFiles;
         private readonly IEventAggregator _eventAggregator;
         private readonly IManageCommandQueue _commandQueueManager;
         private readonly Logger _logger;
@@ -42,6 +44,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
                                       IDiskProvider diskProvider,
                                       IHistoryService historyService,
                                       IEpisodeDownloadReservationService reservations,
+                                      IVersionEpisodeFileAssignmentService versionFiles,
                                       IEventAggregator eventAggregator,
                                       IManageCommandQueue commandQueueManager,
                                       Logger logger)
@@ -53,6 +56,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
             _diskProvider = diskProvider;
             _historyService = historyService;
             _reservations = reservations;
+            _versionFiles = versionFiles;
             _eventAggregator = eventAggregator;
             _commandQueueManager = commandQueueManager;
             _logger = logger;
@@ -190,6 +194,11 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
 
                         // Delete existing files from the DB mapped to this path
                         var previousFiles = _mediaFileService.GetFilesWithRelativePath(localEpisode.Series.Id, episodeFile.RelativePath);
+
+                        if (previousFiles.Any(file => _versionFiles.IsOwnedFile(file.Id)))
+                        {
+                            throw new InvalidOperationException("Version-owned episode files cannot be replaced until version-aware import is available.");
+                        }
 
                         foreach (var previousFile in previousFiles)
                         {

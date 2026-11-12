@@ -45,6 +45,8 @@ namespace NzbDrone.Core.Test.TvTests
             AllStoredModels[0].VersionEpisodeFileId.Should().Be(AllStoredModels[1].VersionEpisodeFileId);
             Subject.GetOwnedFileIds(_series.Id).Should().ContainSingle().Which.Should().Be(_file.Id);
             Subject.GetOwnedFileIds(_series.Id + 100).Should().BeEmpty();
+            Subject.IsOwnedFile(_file.Id).Should().BeTrue();
+            Subject.IsOwnedFile(_file.Id + 100).Should().BeFalse();
         }
 
         [Test]

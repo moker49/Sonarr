@@ -61,6 +61,17 @@ namespace NzbDrone.Core.Test.MediaFiles.MediaFileDeletionService
         }
 
         [Test]
+        public void refuses_to_delete_a_version_owned_file_before_touching_disk()
+        {
+            Mocker.GetMock<IVersionEpisodeFileAssignmentService>().Setup(v => v.IsOwnedFile(_episodeFile.Id)).Returns(true);
+
+            Assert.Throws<NzbDroneClientException>(() => Subject.DeleteEpisodeFile(_series, _episodeFile));
+
+            Mocker.GetMock<IRecycleBinProvider>().Verify(v => v.DeleteFile(It.IsAny<string>(), It.IsAny<string>()), Times.Never());
+            Mocker.GetMock<IMediaFileService>().Verify(v => v.Delete(It.IsAny<EpisodeFile>(), It.IsAny<DeleteMediaFileReason>()), Times.Never());
+        }
+
+        [Test]
         public void should_throw_if_root_folder_does_not_exist()
         {
             Assert.Throws<NzbDroneClientException>(() => Subject.DeleteEpisodeFile(_series, _episodeFile));

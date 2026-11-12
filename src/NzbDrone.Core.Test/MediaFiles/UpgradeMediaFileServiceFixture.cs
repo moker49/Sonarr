@@ -1,4 +1,6 @@
 using System.IO;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using FizzWare.NBuilder;
 using FluentAssertions;
@@ -91,6 +93,23 @@ namespace NzbDrone.Core.Test.MediaFiles
                                                                                 })
                                                      .Build()
                                                      .ToList();
+        }
+
+        [Test]
+        public void refuses_the_whole_upgrade_when_any_existing_file_has_a_version_owner()
+        {
+            _localEpisode.Episodes = new List<Episode>
+            {
+                new Episode { EpisodeFileId = 1, EpisodeFile = new EpisodeFile { Id = 1, RelativePath = "one.mkv" } },
+                new Episode { EpisodeFileId = 2, EpisodeFile = new EpisodeFile { Id = 2, RelativePath = "two.mkv" } }
+            };
+            Mocker.GetMock<IVersionEpisodeFileAssignmentService>().Setup(v => v.IsOwnedFile(2)).Returns(true);
+
+            Assert.Throws<InvalidOperationException>(() => Subject.UpgradeEpisodeFile(_episodeFile, _localEpisode));
+
+            Mocker.GetMock<IRecycleBinProvider>().Verify(v => v.DeleteFile(It.IsAny<string>(), It.IsAny<string>()), Times.Never());
+            Mocker.GetMock<IMediaFileService>().Verify(v => v.Delete(It.IsAny<EpisodeFile>(), It.IsAny<DeleteMediaFileReason>()), Times.Never());
+            Mocker.GetMock<IMoveEpisodeFiles>().Verify(v => v.MoveEpisodeFile(It.IsAny<EpisodeFile>(), It.IsAny<LocalEpisode>()), Times.Never());
         }
 
         [Test]

@@ -99,6 +99,22 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeImport
         }
 
         [Test]
+        public void existing_file_import_does_not_remove_any_records_if_a_path_has_a_version_owner()
+        {
+            var decision = _approvedDecisions.First();
+            Mocker.GetMock<IMediaFileService>().Setup(s => s.GetFilesWithRelativePath(It.IsAny<int>(), It.IsAny<string>()))
+                .Returns(new List<EpisodeFile> { new EpisodeFile { Id = 1 }, new EpisodeFile { Id = 2 } });
+            Mocker.GetMock<IVersionEpisodeFileAssignmentService>().Setup(s => s.IsOwnedFile(2)).Returns(true);
+
+            var results = Subject.Import(new List<ImportDecision> { decision }, false);
+
+            results.Single().Result.Should().NotBe(ImportResultType.Imported);
+            Mocker.GetMock<IMediaFileService>().Verify(s => s.Delete(It.IsAny<EpisodeFile>(), It.IsAny<DeleteMediaFileReason>()), Times.Never());
+            Mocker.GetMock<IMediaFileService>().Verify(s => s.Add(It.IsAny<EpisodeFile>()), Times.Never());
+            ExceptionVerification.ExpectedWarns(1);
+        }
+
+        [Test]
         public void versioned_episode_cannot_bypass_the_managed_import_guard()
         {
             var decision = _approvedDecisions.First();
