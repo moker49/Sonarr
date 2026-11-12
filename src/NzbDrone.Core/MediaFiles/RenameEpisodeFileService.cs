@@ -118,6 +118,7 @@ namespace NzbDrone.Core.MediaFiles
 
         private List<RenamedEpisodeFile> RenameFiles(List<EpisodeFile> episodeFiles, Series series)
         {
+            using var lease = SeriesOperationSynchronization.Acquire(series.Id);
             var renamed = new List<RenamedEpisodeFile>();
 
             foreach (var episodeFile in episodeFiles)

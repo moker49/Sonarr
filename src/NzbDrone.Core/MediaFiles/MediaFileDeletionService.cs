@@ -53,6 +53,7 @@ namespace NzbDrone.Core.MediaFiles
 
         public void DeleteEpisodeFile(Series series, EpisodeFile episodeFile)
         {
+            using var lease = SeriesOperationSynchronization.Acquire(series.Id);
             if (_versionFiles.IsOwnedFile(episodeFile.Id))
             {
                 throw new NzbDroneClientException(HttpStatusCode.Conflict, "Version-owned episode files cannot be removed until version-aware deletion is available.");

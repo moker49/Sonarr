@@ -1,4 +1,5 @@
 using System;
+using FizzWare.NBuilder;
 using FluentAssertions;
 using NUnit.Framework;
 using NzbDrone.Core.Exceptions;
@@ -24,6 +25,24 @@ namespace NzbDrone.Core.Test.Profiles
             Action delete = () => Subject.EnsureDeletable(3);
             assign.Should().NotThrow();
             delete.Should().NotThrow();
+        }
+
+        [Test]
+        public void legacy_operation_checks_authoritative_series_assignment_and_prior_versions()
+        {
+            var series = Db.Insert(FizzWare.NBuilder.Builder<NzbDrone.Core.Tv.Series>.CreateNew().With(s => s.QualityProfileId = 1).BuildNew());
+            Action ordinary = () => Subject.EnsureSeriesOrdinary(series.Id);
+            ordinary.Should().NotThrow();
+
+            var repository = Mocker.Resolve<NzbDrone.Core.Datastore.BasicRepository<NzbDrone.Core.Tv.Series>>();
+            series.QualityProfileId = 10;
+            repository.Update(series);
+            ordinary.Should().Throw<NzbDroneClientException>();
+
+            series.QualityProfileId = 1;
+            repository.Update(series);
+            Db.Insert(new NzbDrone.Core.Tv.SeriesVersion { SeriesId = series.Id, CompositeProfileVersionId = 1, Retired = true });
+            ordinary.Should().Throw<NzbDroneClientException>();
         }
 
         [Test]

@@ -14,6 +14,7 @@ using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Profiles.Qualities;
+using NzbDrone.Core.Tv;
 
 namespace NzbDrone.Core.Download
 {
@@ -60,6 +61,12 @@ namespace NzbDrone.Core.Download
 
         public async Task DownloadReport(RemoteEpisode remoteEpisode, int? downloadClientId)
         {
+            using var lease = await SeriesOperationSynchronization.AcquireAsync(remoteEpisode?.Series?.Id ?? 0);
+            await DownloadReportCore(remoteEpisode, downloadClientId);
+        }
+
+        private async Task DownloadReportCore(RemoteEpisode remoteEpisode, int? downloadClientId)
+        {
             if (remoteEpisode?.SeriesVersionId.HasValue == true)
             {
                 remoteEpisode = _versionDispatch.Prepare(remoteEpisode)
@@ -68,6 +75,10 @@ namespace NzbDrone.Core.Download
 
             if (remoteEpisode?.Series != null)
             {
+                if (!remoteEpisode.SeriesVersionId.HasValue)
+                {
+                    _compositePolicy.EnsureSeriesOrdinary(remoteEpisode.Series.Id);
+                }
                 _compositePolicy.EnsureAssignable(new[] { remoteEpisode.Series.QualityProfileId });
             }
 

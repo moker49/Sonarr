@@ -15,6 +15,7 @@ namespace NzbDrone.Core.Profiles.Qualities
     public interface ICompositeProfilePolicy
     {
         void EnsureAssignable(IEnumerable<int> profileIds);
+        void EnsureSeriesOrdinary(int seriesId);
         void EnsureDeletable(int profileId);
     }
 
@@ -39,6 +40,18 @@ namespace NzbDrone.Core.Profiles.Qualities
             if (connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"CompositeProfileVersions\" WHERE \"CompositeProfileId\" IN @ids", new { ids }) != 0)
             {
                 throw new NzbDroneClientException(HttpStatusCode.Conflict, "Composite profiles are drafts and cannot yet be assigned to series or import lists.");
+            }
+        }
+
+        public void EnsureSeriesOrdinary(int seriesId)
+        {
+            using var connection = _database.OpenConnection();
+            var ordinary = connection.ExecuteScalar<int>(@"SELECT COUNT(*) FROM ""Series"" s WHERE s.""Id"" = @seriesId
+                AND NOT EXISTS (SELECT 1 FROM ""CompositeProfileVersions"" p WHERE p.""CompositeProfileId"" = s.""QualityProfileId"")
+                AND NOT EXISTS (SELECT 1 FROM ""SeriesVersions"" v WHERE v.""SeriesId"" = s.""Id"")", new { seriesId });
+            if (ordinary != 1)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.Conflict, "The series is missing or requires an explicit version operation; refresh and try again.");
             }
         }
 

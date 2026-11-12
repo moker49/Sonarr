@@ -173,6 +173,7 @@ namespace NzbDrone.Core.Tv
 
         public void DeleteSeries(List<int> seriesIds, bool deleteFiles, bool addImportListExclusion)
         {
+            using var lease = SeriesOperationSynchronization.AcquireMany(seriesIds);
             var series = _seriesRepository.Get(seriesIds).ToList();
             _seriesRepository.DeleteMany(seriesIds);
             _eventAggregator.PublishEvent(new SeriesDeletedEvent(series, deleteFiles, addImportListExclusion));

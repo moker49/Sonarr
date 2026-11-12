@@ -33,6 +33,7 @@ namespace NzbDrone.Core.MediaFiles
 
         public void Clean(Series series, List<string> filesOnDisk)
         {
+            using var lease = SeriesOperationSynchronization.Acquire(series.Id);
             var seriesFiles = _mediaFileService.GetFilesBySeries(series.Id);
             var episodes = _episodeService.GetEpisodeBySeries(series.Id);
             var versionFileIds = _versionFiles.GetOwnedFileIds(series.Id);
