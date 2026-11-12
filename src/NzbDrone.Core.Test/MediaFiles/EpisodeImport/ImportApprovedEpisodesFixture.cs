@@ -111,7 +111,8 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeImport
             results.Single().Result.Should().NotBe(ImportResultType.Imported);
             Mocker.GetMock<IMediaFileService>().Verify(s => s.Delete(It.IsAny<EpisodeFile>(), It.IsAny<DeleteMediaFileReason>()), Times.Never());
             Mocker.GetMock<IMediaFileService>().Verify(s => s.Add(It.IsAny<EpisodeFile>()), Times.Never());
-            ExceptionVerification.ExpectedWarns(1);
+            results.Single().Errors.Should().Contain("Failed to import episode");
+            ExceptionVerification.IgnoreWarns();
         }
 
         [Test]
@@ -125,6 +126,21 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeImport
             result.Single().Result.Should().NotBe(ImportResultType.Imported);
             Mocker.GetMock<IUpgradeMediaFiles>().Verify(v => v.UpgradeEpisodeFile(It.IsAny<EpisodeFile>(), It.IsAny<LocalEpisode>(), It.IsAny<bool>()), Times.Never());
             Mocker.GetMock<IMediaFileService>().Verify(v => v.Add(It.IsAny<EpisodeFile>()), Times.Never());
+        }
+
+        [Test]
+        public void explicit_version_import_uses_journaled_path_without_legacy_file_or_history_events()
+        {
+            var decision = _approvedDecisions.First();
+            decision.LocalEpisode.SeriesVersionId = 42;
+            var file = new EpisodeFile { Id = 99 };
+            Mocker.GetMock<IEpisodeVersionFileImportService>().Setup(s => s.Import(decision.LocalEpisode, true, _downloadClientItem, ImportMode.Auto)).Returns(file);
+
+            var result = Subject.Import(new List<ImportDecision> { decision }, true, _downloadClientItem);
+
+            result.Single().EpisodeFile.Should().BeSameAs(file);
+            Mocker.GetMock<IMediaFileService>().Verify(s => s.Add(It.IsAny<EpisodeFile>()), Times.Never());
+            Mocker.GetMock<IEventAggregator>().Verify(s => s.PublishEvent(It.IsAny<EpisodeImportedEvent>()), Times.Never());
         }
 
         [TestCase(true)]

@@ -33,6 +33,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
         private readonly IHistoryService _historyService;
         private readonly IEpisodeDownloadReservationService _reservations;
         private readonly IVersionEpisodeFileAssignmentService _versionFiles;
+        private readonly IEpisodeVersionFileImportService _versionImports;
         private readonly IEventAggregator _eventAggregator;
         private readonly IManageCommandQueue _commandQueueManager;
         private readonly Logger _logger;
@@ -45,6 +46,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
                                       IHistoryService historyService,
                                       IEpisodeDownloadReservationService reservations,
                                       IVersionEpisodeFileAssignmentService versionFiles,
+                                      IEpisodeVersionFileImportService versionImports,
                                       IEventAggregator eventAggregator,
                                       IManageCommandQueue commandQueueManager,
                                       Logger logger)
@@ -57,6 +59,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
             _historyService = historyService;
             _reservations = reservations;
             _versionFiles = versionFiles;
+            _versionImports = versionImports;
             _eventAggregator = eventAggregator;
             _commandQueueManager = commandQueueManager;
             _logger = logger;
@@ -80,7 +83,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
         {
             var qualifiedImports = decisions
                 .Where(decision => decision.Approved)
-                .GroupBy(decision => decision.LocalEpisode.Series.Id)
+                .GroupBy(decision => (decision.LocalEpisode.Series.Id, decision.LocalEpisode.SeriesVersionId))
                 .SelectMany(group => group
                     .OrderByDescending(decision => decision.LocalEpisode.Quality, new QualityModelComparer(group.First().LocalEpisode.Series.QualityProfile))
                     .ThenByDescending(decision => decision.LocalEpisode.Size))
@@ -97,9 +100,14 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
                 try
                 {
                     var clientId = downloadClientItem?.DownloadClientInfo?.Id;
-                    if (localEpisode.SeriesVersionId.HasValue ||
-                        (clientId.HasValue && (_reservations.HasUnboundForClient(clientId.Value) ||
-                            (downloadClientItem.DownloadId.IsNotNullOrWhiteSpace() && _reservations.FindByClientDownload(clientId.Value, downloadClientItem.DownloadId) != null))))
+                    if (localEpisode.SeriesVersionId.HasValue)
+                    {
+                        var versionFile = _versionImports.Import(localEpisode, newDownload, downloadClientItem, importMode);
+                        importResults.Add(versionFile == null ? new ImportResult(importDecision, "The version import could not be completed.") : new ImportResult(importDecision, versionFile));
+                        continue;
+                    }
+                    if (clientId.HasValue && (_reservations.HasUnboundForClient(clientId.Value) ||
+                            (downloadClientItem.DownloadId.IsNotNullOrWhiteSpace() && _reservations.FindByClientDownload(clientId.Value, downloadClientItem.DownloadId) != null)))
                     {
                         importResults.Add(new ImportResult(importDecision, "Version-aware import is not yet available for this download."));
                         continue;
