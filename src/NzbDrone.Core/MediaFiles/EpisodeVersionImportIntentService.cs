@@ -23,6 +23,7 @@ namespace NzbDrone.Core.MediaFiles
         void CancelPrepared(int importId);
         void BeginMove(int importId, bool copyOnly);
         void ConfirmMoved(int importId);
+        void RecoverMoved(int seriesId, int importId, string note);
         void MarkUncertain(int importId, string note);
     }
 
@@ -180,13 +181,30 @@ namespace NzbDrone.Core.MediaFiles
 
         public void ConfirmMoved(int importId)
         {
+            ConfirmMovedCore(importId, null, null);
+        }
+
+        public void RecoverMoved(int seriesId, int importId, string note)
+        {
+            if (seriesId <= 0 || string.IsNullOrWhiteSpace(note) || note.Length > 2048)
+            {
+                throw new ArgumentException("A series and recovery explanation are required.");
+            }
+
+            ConfirmMovedCore(importId, seriesId, note);
+        }
+
+        private void ConfirmMovedCore(int importId, int? expectedSeriesId, string note)
+        {
             EpisodeVersionImportIntent snapshot;
             using (var connection = _database.OpenConnection())
             {
                 snapshot = connection.QuerySingleOrDefault<EpisodeVersionImportIntent>("SELECT * FROM \"EpisodeVersionImportIntents\" WHERE \"Id\" = @importId", new { importId });
             }
 
-            if (snapshot == null || snapshot.State != EpisodeVersionImportIntentState.Moving || !snapshot.SourceSize.HasValue || !snapshot.CopyOnly.HasValue || string.IsNullOrWhiteSpace(snapshot.SourceHash) || !_disk.FileExists(snapshot.DestinationPath))
+            if (snapshot == null || (expectedSeriesId.HasValue && snapshot.SeriesId != expectedSeriesId.Value) ||
+                (snapshot.State != EpisodeVersionImportIntentState.Moving && !(expectedSeriesId.HasValue && snapshot.State == EpisodeVersionImportIntentState.Uncertain)) ||
+                !snapshot.SourceSize.HasValue || !snapshot.CopyOnly.HasValue || string.IsNullOrWhiteSpace(snapshot.SourceHash) || !_disk.FileExists(snapshot.DestinationPath))
             {
                 throw new InvalidOperationException("The move cannot be confirmed without its saved evidence and destination.");
             }
@@ -203,12 +221,21 @@ namespace NzbDrone.Core.MediaFiles
             using var writeConnection = _database.OpenConnection();
             using var transaction = writeConnection.BeginTransaction(IsolationLevel.ReadCommitted);
             var intent = LockAndRead(writeConnection, transaction, importId);
-            if (intent.State != EpisodeVersionImportIntentState.Moving || intent.SourcePath != snapshot.SourcePath || intent.DestinationPath != snapshot.DestinationPath || intent.SourceSize != snapshot.SourceSize || intent.SourceHash != snapshot.SourceHash || intent.CopyOnly != snapshot.CopyOnly)
+            if (intent.State != snapshot.State || intent.SeriesId != snapshot.SeriesId || intent.ReservationId != snapshot.ReservationId ||
+                intent.SourcePath != snapshot.SourcePath || intent.DestinationPath != snapshot.DestinationPath || intent.SourceSize != snapshot.SourceSize || intent.SourceHash != snapshot.SourceHash || intent.CopyOnly != snapshot.CopyOnly)
             {
                 throw new InvalidOperationException("The import changed while verifying the move.");
             }
 
-            writeConnection.Execute("UPDATE \"EpisodeVersionImportIntents\" SET \"State\" = @moved, \"UpdatedAt\" = @now WHERE \"Id\" = @importId", new { moved = (int)EpisodeVersionImportIntentState.Moved, now = DateTime.UtcNow, importId }, transaction);
+            var episodeLocks = writeConnection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionImportEpisodeLocks\" WHERE \"ImportId\" = @importId AND \"SeriesVersionId\" = @versionId", new { importId, versionId = intent.SeriesVersionId }, transaction);
+            var expectedHashes = new[] { intent.SourcePath, intent.DestinationPath }.Select(path => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path.ToUpperInvariant())))).ToArray();
+            var pathLocks = writeConnection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionImportPathLocks\" WHERE \"ImportId\" = @importId AND \"PathHash\" IN @expectedHashes", new { importId, expectedHashes }, transaction);
+            if (episodeLocks == 0 || pathLocks != 2)
+            {
+                throw new InvalidOperationException("The import's episode or path locks are incomplete.");
+            }
+
+            writeConnection.Execute("UPDATE \"EpisodeVersionImportIntents\" SET \"State\" = @moved, \"Note\" = COALESCE(@note, \"Note\"), \"UpdatedAt\" = @now WHERE \"Id\" = @importId", new { moved = (int)EpisodeVersionImportIntentState.Moved, note, now = DateTime.UtcNow, importId }, transaction);
             transaction.Commit();
         }
 

@@ -96,6 +96,31 @@ namespace NzbDrone.Core.Test.MediaFiles
         }
 
         [Test]
+        public void uncertain_move_can_be_recovered_only_with_matching_evidence_and_series()
+        {
+            var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, _destination);
+            Subject.BeginMove(id, false);
+            Subject.MarkUncertain(id, "Interrupted");
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_source)).Returns(false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_destination)).Returns(true);
+
+            Action wrongSeries = () => Subject.RecoverMoved(_series.Id + 100, id, "Checked");
+            wrongSeries.Should().Throw<InvalidOperationException>();
+            Mocker.GetMock<IEpisodeImportFileFingerprintService>().Setup(f => f.Read(_destination)).Returns(new EpisodeImportFileFingerprint { Size = 123, Hash = new string('B', 64) });
+            Action wrongContent = () => Subject.RecoverMoved(_series.Id, id, "Checked");
+            wrongContent.Should().Throw<InvalidOperationException>();
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Uncertain);
+
+            Mocker.GetMock<IEpisodeImportFileFingerprintService>().Setup(f => f.Read(_destination)).Returns(new EpisodeImportFileFingerprint { Size = 123, Hash = new string('A', 64) });
+            Subject.RecoverMoved(_series.Id, id, "Verified destination after interruption");
+
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Moved && i.Note == "Verified destination after interruption");
+            Subject.GetEpisodeIds(id).Should().Equal(_first.Id);
+            Action cancel = () => Subject.CancelPrepared(id);
+            cancel.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
         public void refuses_to_start_if_an_episode_became_occupied_after_preparation()
         {
             var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, _destination);

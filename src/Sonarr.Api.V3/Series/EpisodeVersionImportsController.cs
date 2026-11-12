@@ -53,6 +53,30 @@ namespace Sonarr.Api.V3.Series
             }
         }
 
+        [HttpPost("{importId:int}/confirm-moved")]
+        public EpisodeVersionImportResource ConfirmMoved(int seriesId, int importId, [FromBody] EpisodeVersionImportRecoveryResource resource)
+        {
+            _series.GetSeries(seriesId);
+            if (resource == null)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.BadRequest, "A recovery explanation is required.");
+            }
+
+            try
+            {
+                _intents.RecoverMoved(seriesId, importId, resource.Note);
+                return ToResource(_intents.GetActive(seriesId).Single(i => i.Id == importId));
+            }
+            catch (ArgumentException ex)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.BadRequest, ex.Message, ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.Conflict, ex.Message, ex);
+            }
+        }
+
         private EpisodeVersionImportResource ToResource(EpisodeVersionImportIntent intent)
         {
             return new EpisodeVersionImportResource
@@ -97,5 +121,10 @@ namespace Sonarr.Api.V3.Series
         public EpisodeVersionImportObservation Observation { get; set; }
         public EpisodeVersionImportFileObservation Source { get; set; }
         public EpisodeVersionImportFileObservation Destination { get; set; }
+    }
+
+    public class EpisodeVersionImportRecoveryResource
+    {
+        public string Note { get; set; }
     }
 }
