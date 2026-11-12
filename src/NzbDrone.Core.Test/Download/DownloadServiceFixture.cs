@@ -66,6 +66,20 @@ namespace NzbDrone.Core.Test.Download
         }
 
         [Test]
+        public async Task explicit_version_uses_reserved_submission_and_publishes_bound_download_identity()
+        {
+            _parseResult.SeriesVersionId = 7;
+            var client = WithUsenetClient();
+            Mocker.GetMock<IEpisodeVersionDownloadDispatchService>().Setup(s => s.Prepare(_parseResult)).Returns(_parseResult);
+            Mocker.GetMock<IEpisodeVersionDownloadDispatchService>().Setup(s => s.Submit(_parseResult, client.Object, It.IsAny<IIndexer>())).ReturnsAsync(new EpisodeVersionDownloadSubmission { Episode = _parseResult, ReservationId = 12, DownloadId = "bound-job" });
+
+            await Subject.DownloadReport(_parseResult, null);
+
+            client.Verify(c => c.Download(It.IsAny<RemoteEpisode>(), It.IsAny<IIndexer>()), Times.Never());
+            Mocker.GetMock<NzbDrone.Core.Messaging.Events.IEventAggregator>().Verify(e => e.PublishEvent(It.Is<EpisodeGrabbedEvent>(g => g.Episode.SeriesVersionId == 7 && g.DownloadId == "bound-job")), Times.Once());
+        }
+
+        [Test]
         public void should_reject_composite_parent_before_contacting_a_download_client()
         {
             Mocker.GetMock<ICompositeProfilePolicy>().Setup(p => p.EnsureAssignable(It.IsAny<IEnumerable<int>>())).Throws(new NzbDroneClientException(HttpStatusCode.Conflict, "Composite draft"));

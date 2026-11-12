@@ -44,6 +44,21 @@ namespace NzbDrone.Core.Test.Download
         }
 
         [Test]
+        public void empty_slot_dispatch_rechecks_version_assignments_and_primary_links_in_transaction()
+        {
+            Db.Insert(new EpisodeVersionAssignment { SeriesVersionId = _hdr.Id, EpisodeId = _first.Id, VersionEpisodeFileId = 99 });
+            Action secondaryOccupied = () => Subject.ReserveEmptySlots(_hdr.Id, new[] { "release" }, new[] { _first.Id });
+            secondaryOccupied.Should().Throw<InvalidOperationException>();
+            Action primaryOccupied = () => Subject.ReserveEmptySlots(_sdr.Id, new[] { "release" }, new[] { _first.Id });
+            primaryOccupied.Should().Throw<InvalidOperationException>();
+            AllStoredModels.Should().BeEmpty();
+
+            _first.EpisodeFileId = 0;
+            Mocker.Resolve<BasicRepository<Episode>>().Update(_first);
+            Subject.ReserveEmptySlots(_sdr.Id, new[] { "release" }, new[] { _first.Id }).Should().BePositive();
+        }
+
+        [Test]
         public void release_frees_all_episode_slots_atomically()
         {
             var reservation = Subject.Reserve(_sdr.Id, "pack", new[] { _first.Id, _second.Id });

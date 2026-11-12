@@ -13,6 +13,7 @@ namespace NzbDrone.Core.Download
     {
         int Reserve(int seriesVersionId, string releaseKey, IReadOnlyCollection<int> episodeIds);
         int Reserve(int seriesVersionId, IReadOnlyCollection<string> releaseKeys, IReadOnlyCollection<int> episodeIds);
+        int ReserveEmptySlots(int seriesVersionId, IReadOnlyCollection<string> releaseKeys, IReadOnlyCollection<int> episodeIds);
         List<EpisodeDownloadReservation> ForSeries(int seriesId);
         List<int> GetEpisodeIds(int reservationId);
         EpisodeDownloadReservation FindByClientDownload(int clientId, string downloadId);
@@ -44,6 +45,16 @@ namespace NzbDrone.Core.Download
 
         public int Reserve(int seriesVersionId, IReadOnlyCollection<string> releaseKeys, IReadOnlyCollection<int> episodeIds)
         {
+            return ReserveCore(seriesVersionId, releaseKeys, episodeIds, false);
+        }
+
+        public int ReserveEmptySlots(int seriesVersionId, IReadOnlyCollection<string> releaseKeys, IReadOnlyCollection<int> episodeIds)
+        {
+            return ReserveCore(seriesVersionId, releaseKeys, episodeIds, true);
+        }
+
+        private int ReserveCore(int seriesVersionId, IReadOnlyCollection<string> releaseKeys, IReadOnlyCollection<int> episodeIds, bool requireEmpty)
+        {
             if (seriesVersionId <= 0 || releaseKeys == null || releaseKeys.Count == 0 ||
                 releaseKeys.Any(key => string.IsNullOrWhiteSpace(key) || key.Length > 255 || key != key.Trim()) || releaseKeys.Distinct(StringComparer.Ordinal).Count() != releaseKeys.Count ||
                 episodeIds == null || episodeIds.Count == 0 || episodeIds.Any(id => id <= 0) || episodeIds.Distinct().Count() != episodeIds.Count)
@@ -66,6 +77,17 @@ namespace NzbDrone.Core.Download
             var episodes = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"Episodes\" WHERE \"SeriesId\" = @seriesId AND \"Id\" IN @episodeIds", new { seriesId, episodeIds }, transaction);
             var occupied = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeDownloadReservationItems\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"EpisodeId\" IN @episodeIds", new { seriesVersionId, episodeIds }, transaction);
             var duplicate = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeDownloadReservationKeys\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"ReleaseKey\" IN @releaseKeys", new { seriesVersionId, releaseKeys }, transaction);
+            if (requireEmpty)
+            {
+                var files = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionAssignments\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"EpisodeId\" IN @episodeIds AND \"VersionEpisodeFileId\" IS NOT NULL", new { seriesVersionId, episodeIds }, transaction);
+                var primaryLinks = connection.ExecuteScalar<int>(@"SELECT COUNT(*) FROM ""Episodes"" e JOIN ""SeriesVersions"" v ON v.""SeriesId"" = e.""SeriesId""
+                    JOIN ""CompositeProfileVersions"" p ON p.""Id"" = v.""CompositeProfileVersionId""
+                    WHERE v.""Id"" = @seriesVersionId AND p.""IsPrimary"" = @primary AND e.""Id"" IN @episodeIds AND e.""EpisodeFileId"" <> 0", new { seriesVersionId, primary = true, episodeIds }, transaction);
+                if (files != 0 || primaryLinks != 0)
+                {
+                    throw new InvalidOperationException("The version's episode slots became occupied before dispatch.");
+                }
+            }
             if (active != 1 || episodes != episodeIds.Count || occupied != 0 || duplicate != 0)
             {
                 throw new InvalidOperationException("The version or episodes are invalid, or the release overlaps an existing reservation.");

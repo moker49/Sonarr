@@ -32,6 +32,7 @@ namespace NzbDrone.Core.Download
         private readonly IEventAggregator _eventAggregator;
         private readonly ISeedConfigProvider _seedConfigProvider;
         private readonly ICompositeProfilePolicy _compositePolicy;
+        private readonly IEpisodeVersionDownloadDispatchService _versionDispatch;
         private readonly Logger _logger;
 
         public DownloadService(IProvideDownloadClient downloadClientProvider,
@@ -42,6 +43,7 @@ namespace NzbDrone.Core.Download
                                IEventAggregator eventAggregator,
                                ISeedConfigProvider seedConfigProvider,
                                ICompositeProfilePolicy compositePolicy,
+                               IEpisodeVersionDownloadDispatchService versionDispatch,
                                Logger logger)
         {
             _downloadClientProvider = downloadClientProvider;
@@ -52,6 +54,7 @@ namespace NzbDrone.Core.Download
             _eventAggregator = eventAggregator;
             _seedConfigProvider = seedConfigProvider;
             _compositePolicy = compositePolicy;
+            _versionDispatch = versionDispatch;
             _logger = logger;
         }
 
@@ -59,7 +62,8 @@ namespace NzbDrone.Core.Download
         {
             if (remoteEpisode?.SeriesVersionId.HasValue == true)
             {
-                throw new NzbDroneClientException(HttpStatusCode.Conflict, "Version-aware download processing is not yet available.");
+                remoteEpisode = _versionDispatch.Prepare(remoteEpisode)
+                    ?? throw new NzbDroneClientException(HttpStatusCode.Conflict, "The version download context could not be validated.");
             }
 
             if (remoteEpisode?.Series != null)
@@ -110,7 +114,16 @@ namespace NzbDrone.Core.Download
             string downloadClientId;
             try
             {
-                downloadClientId = await downloadClient.Download(remoteEpisode, indexer);
+                if (remoteEpisode.SeriesVersionId.HasValue)
+                {
+                    var submission = await _versionDispatch.Submit(remoteEpisode, downloadClient, indexer);
+                    remoteEpisode = submission.Episode;
+                    downloadClientId = submission.DownloadId;
+                }
+                else
+                {
+                    downloadClientId = await downloadClient.Download(remoteEpisode, indexer);
+                }
                 _downloadClientStatusService.RecordSuccess(downloadClient.Definition.Id);
                 _indexerStatusService.RecordSuccess(remoteEpisode.Release.IndexerId);
             }

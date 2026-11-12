@@ -20,6 +20,7 @@ namespace NzbDrone.Core.DecisionEngine
     {
         List<DownloadDecision> GetRssDecision(List<ReleaseInfo> reports, bool pushedRelease = false);
         List<DownloadDecision> GetSearchDecision(List<ReleaseInfo> reports, SearchCriteriaBase searchCriteriaBase);
+        DownloadDecision GetMappedDecision(RemoteEpisode episode);
     }
 
     public class DownloadDecisionMaker : IMakeDownloadDecision
@@ -55,6 +56,11 @@ namespace NzbDrone.Core.DecisionEngine
         public List<DownloadDecision> GetRssDecision(List<ReleaseInfo> reports, bool pushedRelease = false)
         {
             return GetDecisions(reports, pushedRelease).ToList();
+        }
+
+        public DownloadDecision GetMappedDecision(RemoteEpisode episode)
+        {
+            return EvaluateMappedEpisode(episode, episode.Release, null);
         }
 
         public List<DownloadDecision> GetSearchDecision(List<ReleaseInfo> reports, SearchCriteriaBase searchCriteriaBase)
