@@ -211,7 +211,7 @@ namespace NzbDrone.Core.Tv
         {
             lock (CompositeProfileSynchronization.SyncRoot)
             {
-                _compositePolicy.EnsureAssignable(new[] { series.QualityProfileId });
+                _compositePolicy.EnsureSeriesUpdate(series.Id, series.QualityProfileId);
                 return UpdateSeriesCore(series, updateEpisodesToMatchSeason, publishUpdatedEvent);
             }
         }
@@ -253,7 +253,10 @@ namespace NzbDrone.Core.Tv
         {
             lock (CompositeProfileSynchronization.SyncRoot)
             {
-                _compositePolicy.EnsureAssignable(series.Select(s => s.QualityProfileId));
+                foreach (var item in series)
+                {
+                    _compositePolicy.EnsureSeriesUpdate(item.Id, item.QualityProfileId);
+                }
                 return UpdateSeriesCore(series, useExistingRelativeFolder);
             }
         }

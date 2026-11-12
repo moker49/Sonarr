@@ -39,6 +39,11 @@ namespace NzbDrone.Core.Test.Profiles
             repository.Update(series);
             ordinary.Should().Throw<NzbDroneClientException>();
 
+            Action unchangedComposite = () => Subject.EnsureSeriesUpdate(series.Id, 10);
+            unchangedComposite.Should().NotThrow();
+            Action bypassConversion = () => Subject.EnsureSeriesUpdate(series.Id, 1);
+            bypassConversion.Should().Throw<NzbDroneClientException>();
+
             series.QualityProfileId = 1;
             repository.Update(series);
             Db.Insert(new NzbDrone.Core.Tv.SeriesVersion { SeriesId = series.Id, CompositeProfileVersionId = 1, Retired = true });

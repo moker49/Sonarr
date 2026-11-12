@@ -16,6 +16,7 @@ namespace NzbDrone.Core.Profiles.Qualities
     {
         void EnsureAssignable(IEnumerable<int> profileIds);
         void EnsureSeriesOrdinary(int seriesId);
+        void EnsureSeriesUpdate(int seriesId, int profileId);
         void EnsureDeletable(int profileId);
     }
 
@@ -53,6 +54,22 @@ namespace NzbDrone.Core.Profiles.Qualities
             {
                 throw new NzbDroneClientException(HttpStatusCode.Conflict, "The series is missing or requires an explicit version operation; refresh and try again.");
             }
+        }
+
+        public void EnsureSeriesUpdate(int seriesId, int profileId)
+        {
+            using var connection = _database.OpenConnection();
+            var current = connection.QuerySingleOrDefault<int?>("SELECT \"QualityProfileId\" FROM \"Series\" WHERE \"Id\" = @seriesId", new { seriesId });
+            if (!current.HasValue)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.Conflict, "The series no longer exists.");
+            }
+            if (current.Value == profileId)
+            {
+                return;
+            }
+            EnsureSeriesOrdinary(seriesId);
+            EnsureAssignable(new[] { profileId });
         }
 
         public void EnsureDeletable(int profileId)

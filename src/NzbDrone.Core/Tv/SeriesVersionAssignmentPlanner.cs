@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Dapper;
 using FluentValidation;
 using NzbDrone.Core.Datastore;
@@ -14,6 +17,8 @@ namespace NzbDrone.Core.Tv
         public int EpisodeFileId { get; set; }
         public int CompositeProfileVersionId { get; set; }
         public List<int> EpisodeIds { get; set; }
+        public string RelativePath { get; set; }
+        public long Size { get; set; }
     }
 
     public class SeriesVersionAssignmentPlan
@@ -23,6 +28,9 @@ namespace NzbDrone.Core.Tv
         public int CompositeProfileId { get; set; }
         public List<CompositeProfileVersion> Versions { get; set; }
         public List<SeriesVersionFilePlan> ExistingFiles { get; set; }
+        public string SeriesPath { get; set; }
+        public List<int> EpisodeIds { get; set; }
+        public string SnapshotToken { get; set; }
     }
 
     public interface ISeriesVersionAssignmentPlanner
@@ -45,6 +53,13 @@ namespace NzbDrone.Core.Tv
         {
             using var connection = _database.OpenConnection();
             using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+            var result = Build(connection, transaction, seriesId, compositeProfileId, existingFileVersionId);
+            transaction.Commit();
+            return result;
+        }
+
+        internal static SeriesVersionAssignmentPlan Build(IDbConnection connection, IDbTransaction transaction, int seriesId, int compositeProfileId, int? existingFileVersionId)
+        {
             var currentProfile = connection.QuerySingleOrDefault<int?>("SELECT \"QualityProfileId\" FROM \"Series\" WHERE \"Id\" = @seriesId", new { seriesId }, transaction);
             if (!currentProfile.HasValue)
             {
@@ -61,7 +76,8 @@ namespace NzbDrone.Core.Tv
             }
 
             var episodes = connection.Query<EpisodeFileReference>("SELECT \"Id\" AS \"EpisodeId\", \"EpisodeFileId\" FROM \"Episodes\" WHERE \"SeriesId\" = @seriesId AND \"EpisodeFileId\" <> 0", new { seriesId }, transaction).ToList();
-            var fileIds = connection.Query<int>("SELECT \"Id\" FROM \"EpisodeFiles\" WHERE \"SeriesId\" = @seriesId", new { seriesId }, transaction).ToHashSet();
+            var files = connection.Query<FileReference>("SELECT \"Id\", \"RelativePath\", \"Size\" FROM \"EpisodeFiles\" WHERE \"SeriesId\" = @seriesId", new { seriesId }, transaction).ToDictionary(f => f.Id);
+            var fileIds = files.Keys.ToHashSet();
             if (!fileIds.SetEquals(episodes.Select(e => e.EpisodeFileId)))
             {
                 throw new InvalidOperationException("Registered files and episode references do not match; resolve them before conversion.");
@@ -84,15 +100,26 @@ namespace NzbDrone.Core.Tv
                 ExistingProfileId = currentProfile.Value,
                 CompositeProfileId = compositeProfileId,
                 Versions = definitions,
+                SeriesPath = connection.QuerySingle<string>("SELECT \"Path\" FROM \"Series\" WHERE \"Id\" = @seriesId", new { seriesId }, transaction),
+                EpisodeIds = connection.Query<int>("SELECT \"Id\" FROM \"Episodes\" WHERE \"SeriesId\" = @seriesId ORDER BY \"Id\"", new { seriesId }, transaction).ToList(),
                 ExistingFiles = episodes.GroupBy(e => e.EpisodeFileId).OrderBy(group => group.Key).Select(group => new SeriesVersionFilePlan
                 {
                     EpisodeFileId = group.Key,
                     CompositeProfileVersionId = existingFileVersionId.Value,
+                    RelativePath = files[group.Key].RelativePath,
+                    Size = files[group.Key].Size,
                     EpisodeIds = group.Select(e => e.EpisodeId).OrderBy(id => id).ToList()
                 }).ToList()
             };
-            transaction.Commit();
+            result.SnapshotToken = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(result))));
             return result;
+        }
+
+        private class FileReference
+        {
+            public int Id { get; set; }
+            public string RelativePath { get; set; }
+            public long Size { get; set; }
         }
 
         private class EpisodeFileReference

@@ -25,7 +25,7 @@ namespace NzbDrone.Core.Test.TvTests
         public void bulk_update_checks_profiles_before_updating_any_series()
         {
             var series = new List<Series> { new Series { QualityProfileId = 1 }, new Series { QualityProfileId = 2 } };
-            Mocker.GetMock<ICompositeProfilePolicy>().Setup(p => p.EnsureAssignable(It.IsAny<IEnumerable<int>>())).Throws<InvalidOperationException>();
+            Mocker.GetMock<ICompositeProfilePolicy>().Setup(p => p.EnsureSeriesUpdate(It.IsAny<int>(), It.IsAny<int>())).Throws<InvalidOperationException>();
 
             Assert.Throws<InvalidOperationException>(() => Subject.UpdateSeries(series, false));
             Mocker.GetMock<ISeriesRepository>().Verify(r => r.UpdateMany(It.IsAny<IList<Series>>()), Times.Never());
