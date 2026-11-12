@@ -21,7 +21,8 @@ namespace NzbDrone.Core.Test.MediaFiles
         {
             _intent = new EpisodeVersionImportIntent { Id = 2, SeriesId = 1, SeriesVersionId = 3, SourceSize = 123, State = EpisodeVersionImportIntentState.Prepared };
             _metadata = new EpisodeFile { SeriesId = 1, Size = 123, Quality = new QualityModel(), Languages = new List<NzbDrone.Core.Languages.Language>(), RelativePath = "Show.mkv" };
-            Mocker.GetMock<IEpisodeVersionImportIntentService>().Setup(s => s.GetActive(1)).Returns(() => new List<EpisodeVersionImportIntent> { _intent });
+            Mocker.GetMock<IEpisodeVersionImportIntentService>().Setup(s => s.GetForSeries(1)).Returns(() => new List<EpisodeVersionImportIntent> { _intent });
+            Mocker.GetMock<IEpisodeVersionImportCompletionService>().Setup(s => s.Complete(1, 2)).Callback(() => _intent.State = EpisodeVersionImportIntentState.Completed).Returns(4);
             Mocker.GetMock<IEpisodeVersionImportTransferService>().Setup(s => s.Transfer(1, 2, false)).Callback(() => { _intent.State = EpisodeVersionImportIntentState.Moved; _intent.CopyOnly = false; });
             Mocker.GetMock<IEpisodeVersionImportIntentService>().Setup(s => s.RegisterMovedFile(1, 2, It.IsAny<EpisodeFile>())).Callback(() => { _intent.State = EpisodeVersionImportIntentState.Registered; _intent.RegisteredFileId = 4; }).Returns(4);
             Mocker.GetMock<IEpisodeVersionImportIntentService>().Setup(s => s.GetEpisodeIds(2)).Returns(new List<int> { 5 });
@@ -37,6 +38,7 @@ namespace NzbDrone.Core.Test.MediaFiles
 
             Mocker.GetMock<IEpisodeVersionImportTransferService>().Verify(s => s.Transfer(1, 2, false), Times.Once());
             Mocker.GetMock<IEpisodeVersionImportIntentService>().Verify(s => s.RegisterMovedFile(1, 2, It.IsAny<EpisodeFile>()), Times.Once());
+            Mocker.GetMock<IEpisodeVersionImportCompletionService>().Verify(s => s.Complete(1, 2), Times.Once());
         }
 
         [Test]

@@ -19,6 +19,7 @@ namespace NzbDrone.Core.MediaFiles
         int Prepare(int reservationId, int clientId, string downloadId, IReadOnlyCollection<int> episodeIds, string sourcePath, string destinationPath);
         List<EpisodeVersionImportIntent> GetPrepared(int seriesId);
         List<EpisodeVersionImportIntent> GetActive(int seriesId);
+        List<EpisodeVersionImportIntent> GetForSeries(int seriesId);
         List<int> GetEpisodeIds(int importId);
         void CancelPrepared(int importId);
         void BeginMove(int importId, bool copyOnly);
@@ -108,6 +109,7 @@ namespace NzbDrone.Core.MediaFiles
             foreach (var episodeId in episodeIds)
             {
                 connection.Execute("INSERT INTO \"EpisodeVersionImportEpisodeLocks\" (\"ImportId\", \"SeriesVersionId\", \"EpisodeId\") VALUES (@importId, @versionId, @episodeId)", new { importId, versionId, episodeId }, transaction);
+                connection.Execute("INSERT INTO \"EpisodeVersionImportEpisodes\" (\"ImportId\", \"EpisodeId\") VALUES (@importId, @episodeId)", new { importId, episodeId }, transaction);
             }
             foreach (var pathHash in pathHashes)
             {
@@ -132,7 +134,13 @@ namespace NzbDrone.Core.MediaFiles
         public List<int> GetEpisodeIds(int importId)
         {
             using var connection = _database.OpenConnection();
-            return connection.Query<int>("SELECT \"EpisodeId\" FROM \"EpisodeVersionImportEpisodeLocks\" WHERE \"ImportId\" = @importId ORDER BY \"EpisodeId\"", new { importId }).ToList();
+            return connection.Query<int>("SELECT \"EpisodeId\" FROM \"EpisodeVersionImportEpisodes\" WHERE \"ImportId\" = @importId ORDER BY \"EpisodeId\"", new { importId }).ToList();
+        }
+
+        public List<EpisodeVersionImportIntent> GetForSeries(int seriesId)
+        {
+            using var connection = _database.OpenConnection();
+            return connection.Query<EpisodeVersionImportIntent>("SELECT * FROM \"EpisodeVersionImportIntents\" WHERE \"SeriesId\" = @seriesId ORDER BY \"Id\"", new { seriesId }).ToList();
         }
 
         public void BeginMove(int importId, bool copyOnly)

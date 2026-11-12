@@ -31,6 +31,13 @@ namespace Sonarr.Api.V3.Series
             return _intents.GetActive(seriesId).Select(ToResource).ToList();
         }
 
+        [HttpGet("history")]
+        public List<EpisodeVersionImportResource> History(int seriesId)
+        {
+            _series.GetSeries(seriesId);
+            return _intents.GetForSeries(seriesId).Select(ToResource).ToList();
+        }
+
         // Hashing large video files is deliberately opt-in, not part of listing.
         [HttpGet("{importId:int}/inspection")]
         public EpisodeVersionImportInspectionResource Inspect(int seriesId, int importId)

@@ -15,6 +15,20 @@ namespace NzbDrone.Api.Test.v3.Series
     public class EpisodeVersionImportsControllerFixture
     {
         [Test]
+        public void history_includes_completed_imports_with_preserved_episode_coverage()
+        {
+            var intents = new Mock<IEpisodeVersionImportIntentService>();
+            intents.Setup(s => s.GetForSeries(1)).Returns(new List<EpisodeVersionImportIntent> { new EpisodeVersionImportIntent { Id = 2, SeriesId = 1, State = EpisodeVersionImportIntentState.Completed, RegisteredFileId = 4 } });
+            intents.Setup(s => s.GetEpisodeIds(2)).Returns(new List<int> { 5, 6 });
+            var controller = new EpisodeVersionImportsController(Mock.Of<ISeriesService>(), intents.Object, Mock.Of<IEpisodeVersionImportInspectionService>());
+
+            var result = controller.History(1);
+
+            result.Should().ContainSingle().Which.EpisodeIds.Should().Equal(5, 6);
+            result[0].RegisteredFileId.Should().Be(4);
+        }
+
+        [Test]
         public void recovery_requires_a_body_and_reports_evidence_conflicts()
         {
             var intents = new Mock<IEpisodeVersionImportIntentService>();

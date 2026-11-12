@@ -17,13 +17,15 @@ namespace NzbDrone.Core.MediaFiles
         private readonly IEpisodeVersionImportTransferService _transfers;
         private readonly IMediaFileService _files;
         private readonly IEpisodeVersionResolver _versions;
+        private readonly IEpisodeVersionImportCompletionService _completion;
 
-        public EpisodeVersionImportWorkflow(IEpisodeVersionImportIntentService intents, IEpisodeVersionImportTransferService transfers, IMediaFileService files, IEpisodeVersionResolver versions)
+        public EpisodeVersionImportWorkflow(IEpisodeVersionImportIntentService intents, IEpisodeVersionImportTransferService transfers, IMediaFileService files, IEpisodeVersionResolver versions, IEpisodeVersionImportCompletionService completion)
         {
             _intents = intents;
             _transfers = transfers;
             _files = files;
             _versions = versions;
+            _completion = completion;
         }
 
         public EpisodeFile Resume(int seriesId, int importId, bool copyOnly, EpisodeFile metadata)
@@ -41,7 +43,7 @@ namespace NzbDrone.Core.MediaFiles
                     throw new InvalidOperationException("The requested transfer mode differs from the recorded import.");
                 }
 
-                if (intent.State != EpisodeVersionImportIntentState.Registered)
+                if (intent.State != EpisodeVersionImportIntentState.Registered && intent.State != EpisodeVersionImportIntentState.Completed)
                 {
                     if (metadata == null || metadata.Id != 0 || metadata.SeriesId != seriesId || metadata.Size <= 0 || metadata.Quality == null || metadata.Languages == null || string.IsNullOrWhiteSpace(metadata.RelativePath))
                     {
@@ -63,7 +65,7 @@ namespace NzbDrone.Core.MediaFiles
                     intent = Find(seriesId, importId);
                 }
 
-                if (intent.State != EpisodeVersionImportIntentState.Registered || !intent.RegisteredFileId.HasValue)
+                if ((intent.State != EpisodeVersionImportIntentState.Registered && intent.State != EpisodeVersionImportIntentState.Completed) || !intent.RegisteredFileId.HasValue)
                 {
                     throw new InvalidOperationException("The import has no registered file.");
                 }
@@ -86,14 +88,19 @@ namespace NzbDrone.Core.MediaFiles
                     throw new InvalidOperationException("The registered file metadata no longer matches the import.");
                 }
 
+                if (intent.State == EpisodeVersionImportIntentState.Registered)
+                {
+                    _completion.Complete(seriesId, importId);
+                }
+
                 return file;
             }
         }
 
         private EpisodeVersionImportIntent Find(int seriesId, int importId)
         {
-            return _intents.GetActive(seriesId).SingleOrDefault(i => i.Id == importId)
-                ?? throw new InvalidOperationException("The active import does not belong to this series.");
+            return _intents.GetForSeries(seriesId).SingleOrDefault(i => i.Id == importId)
+                ?? throw new InvalidOperationException("The import does not belong to this series.");
         }
     }
 }

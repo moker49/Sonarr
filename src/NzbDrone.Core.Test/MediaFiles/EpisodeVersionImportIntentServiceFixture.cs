@@ -32,6 +32,75 @@ namespace NzbDrone.Core.Test.MediaFiles
             return new EpisodeFile { SeriesId = _series.Id, SeasonNumber = _first.SeasonNumber, RelativePath = "Show - HD.mkv", Size = 123, DateAdded = DateTime.UtcNow, Quality = new NzbDrone.Core.Qualities.QualityModel(), Languages = new System.Collections.Generic.List<NzbDrone.Core.Languages.Language>() };
         }
 
+        [Test]
+        public void completion_writes_history_once_and_preserves_episode_coverage_after_unlocking()
+        {
+            var definition = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Get(_version.CompositeProfileVersionId);
+            definition.IsPrimary = false;
+            Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Update(definition);
+            var id = PrepareMovedPack();
+            var fileId = Subject.RegisterMovedFile(_series.Id, id, NewImportFile());
+            var completion = Mocker.Resolve<EpisodeVersionImportCompletionService>();
+
+            completion.Complete(_series.Id, id).Should().Be(fileId);
+            completion.Complete(_series.Id, id).Should().Be(fileId);
+
+            Subject.GetActive(_series.Id).Should().BeEmpty();
+            Subject.GetForSeries(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Completed);
+            Subject.GetEpisodeIds(id).Should().HaveCount(2);
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.History.EpisodeHistory>>().All().Should().HaveCount(2).And.OnlyContain(h => h.SeriesVersionId == _version.Id && h.DownloadId == "job");
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.Download.History.DownloadHistory>>().All().Should().ContainSingle(h => h.EventType == NzbDrone.Core.Download.History.DownloadHistoryEventType.FileImported);
+            using var connection = Mocker.Resolve<IMainDatabase>().OpenConnection();
+            Dapper.SqlMapper.ExecuteScalar<int>(connection, "SELECT COUNT(*) FROM \"EpisodeVersionImportEpisodeLocks\"").Should().Be(0);
+            Dapper.SqlMapper.ExecuteScalar<int>(connection, "SELECT COUNT(*) FROM \"EpisodeVersionImportPathLocks\"").Should().Be(0);
+            Dapper.SqlMapper.ExecuteScalar<int>(connection, "SELECT COUNT(*) FROM \"EpisodeVersionImportCompletions\" WHERE \"PublishedAt\" IS NULL").Should().Be(1);
+        }
+
+        [Test]
+        public void changed_assignment_blocks_completion_without_history_or_lock_release()
+        {
+            var definition = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Get(_version.CompositeProfileVersionId);
+            definition.IsPrimary = false;
+            Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Update(definition);
+            var id = PrepareMovedPack();
+            Subject.RegisterMovedFile(_series.Id, id, NewImportFile());
+            var assignments = Mocker.Resolve<BasicRepository<EpisodeVersionAssignment>>();
+            var assignment = System.Linq.Enumerable.First(assignments.All());
+            assignment.VersionEpisodeFileId = null;
+            assignments.Update(assignment);
+
+            Action complete = () => Mocker.Resolve<EpisodeVersionImportCompletionService>().Complete(_series.Id, id);
+
+            complete.Should().Throw<InvalidOperationException>();
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.History.EpisodeHistory>>().All().Should().BeEmpty();
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Registered);
+            using var connection = Mocker.Resolve<IMainDatabase>().OpenConnection();
+            Dapper.SqlMapper.ExecuteScalar<int>(connection, "SELECT COUNT(*) FROM \"EpisodeVersionImportPathLocks\"").Should().Be(2);
+        }
+
+        [Test]
+        public void completion_record_failure_rolls_back_history_and_preserves_locks()
+        {
+            var definition = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Get(_version.CompositeProfileVersionId);
+            definition.IsPrimary = false;
+            Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Update(definition);
+            var id = PrepareMovedPack();
+            Subject.RegisterMovedFile(_series.Id, id, NewImportFile());
+            using (var connection = Mocker.Resolve<IMainDatabase>().OpenConnection())
+            {
+                Dapper.SqlMapper.Execute(connection, "INSERT INTO \"EpisodeVersionImportCompletions\" (\"ImportId\", \"CreatedAt\") VALUES (@id, @now)", new { id, now = DateTime.UtcNow });
+            }
+
+            Action complete = () => Mocker.Resolve<EpisodeVersionImportCompletionService>().Complete(_series.Id, id);
+
+            complete.Should().Throw<Exception>();
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.History.EpisodeHistory>>().All().Should().BeEmpty();
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.Download.History.DownloadHistory>>().All().Should().BeEmpty();
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Registered);
+            using var check = Mocker.Resolve<IMainDatabase>().OpenConnection();
+            Dapper.SqlMapper.ExecuteScalar<int>(check, "SELECT COUNT(*) FROM \"EpisodeVersionImportEpisodeLocks\"").Should().Be(2);
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void registers_shared_file_and_version_assignments_atomically(bool primary)

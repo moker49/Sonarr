@@ -10,7 +10,8 @@ namespace NzbDrone.Core.MediaFiles
         Moving = 2,
         Moved = 3,
         Uncertain = 4,
-        Registered = 5
+        Registered = 5,
+        Completed = 6
     }
 
     public class EpisodeVersionImportIntent : ModelBase
