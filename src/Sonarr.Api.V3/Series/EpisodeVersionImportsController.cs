@@ -85,6 +85,7 @@ namespace Sonarr.Api.V3.Series
                 SeriesId = intent.SeriesId,
                 SeriesVersionId = intent.SeriesVersionId,
                 ReservationId = intent.ReservationId,
+                RegisteredFileId = intent.RegisteredFileId,
                 EpisodeIds = _intents.GetEpisodeIds(intent.Id),
                 SourcePath = intent.SourcePath,
                 DestinationPath = intent.DestinationPath,
@@ -104,6 +105,7 @@ namespace Sonarr.Api.V3.Series
         public int SeriesId { get; set; }
         public int SeriesVersionId { get; set; }
         public int ReservationId { get; set; }
+        public int? RegisteredFileId { get; set; }
         public List<int> EpisodeIds { get; set; }
         public string SourcePath { get; set; }
         public string DestinationPath { get; set; }

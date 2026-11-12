@@ -24,6 +24,7 @@ namespace NzbDrone.Core.MediaFiles
         void BeginMove(int importId, bool copyOnly);
         void ConfirmMoved(int importId);
         void RecoverMoved(int seriesId, int importId, string note);
+        int RegisterMovedFile(int seriesId, int importId, EpisodeFile file);
         void MarkUncertain(int importId, string note);
     }
 
@@ -125,7 +126,7 @@ namespace NzbDrone.Core.MediaFiles
         public List<EpisodeVersionImportIntent> GetActive(int seriesId)
         {
             using var connection = _database.OpenConnection();
-            return connection.Query<EpisodeVersionImportIntent>("SELECT * FROM \"EpisodeVersionImportIntents\" WHERE \"SeriesId\" = @seriesId AND \"State\" IN @states ORDER BY \"Id\"", new { seriesId, states = new[] { (int)EpisodeVersionImportIntentState.Prepared, (int)EpisodeVersionImportIntentState.Moving, (int)EpisodeVersionImportIntentState.Moved, (int)EpisodeVersionImportIntentState.Uncertain } }).ToList();
+            return connection.Query<EpisodeVersionImportIntent>("SELECT * FROM \"EpisodeVersionImportIntents\" WHERE \"SeriesId\" = @seriesId AND \"State\" IN @states ORDER BY \"Id\"", new { seriesId, states = new[] { (int)EpisodeVersionImportIntentState.Prepared, (int)EpisodeVersionImportIntentState.Moving, (int)EpisodeVersionImportIntentState.Moved, (int)EpisodeVersionImportIntentState.Uncertain, (int)EpisodeVersionImportIntentState.Registered } }).ToList();
         }
 
         public List<int> GetEpisodeIds(int importId)
@@ -237,6 +238,97 @@ namespace NzbDrone.Core.MediaFiles
 
             writeConnection.Execute("UPDATE \"EpisodeVersionImportIntents\" SET \"State\" = @moved, \"Note\" = COALESCE(@note, \"Note\"), \"UpdatedAt\" = @now WHERE \"Id\" = @importId", new { moved = (int)EpisodeVersionImportIntentState.Moved, note, now = DateTime.UtcNow, importId }, transaction);
             transaction.Commit();
+        }
+
+        public int RegisterMovedFile(int seriesId, int importId, EpisodeFile file)
+        {
+            if (file == null || file.Id != 0 || file.SeriesId != seriesId || file.Quality == null || file.Languages == null)
+            {
+                throw new ArgumentException("New episode file metadata for the import's series is required.");
+            }
+
+            EpisodeVersionImportIntent snapshot;
+            using (var readConnection = _database.OpenConnection())
+            {
+                snapshot = readConnection.QuerySingleOrDefault<EpisodeVersionImportIntent>("SELECT * FROM \"EpisodeVersionImportIntents\" WHERE \"Id\" = @importId AND \"SeriesId\" = @seriesId", new { importId, seriesId });
+            }
+
+            if (snapshot == null || snapshot.State != EpisodeVersionImportIntentState.Moved || !snapshot.CopyOnly.HasValue || !snapshot.SourceSize.HasValue || !_disk.FileExists(snapshot.DestinationPath))
+            {
+                throw new InvalidOperationException("Only a verified moved file can be registered.");
+            }
+
+            var target = _fingerprints.Read(snapshot.DestinationPath);
+            var sourceExists = _disk.FileExists(snapshot.SourcePath);
+            var source = snapshot.CopyOnly.Value && sourceExists ? _fingerprints.Read(snapshot.SourcePath) : null;
+            if (target == null || target.Size != snapshot.SourceSize || target.Hash != snapshot.SourceHash || file.Size != snapshot.SourceSize ||
+                (snapshot.CopyOnly.Value ? source == null || source.Size != snapshot.SourceSize || source.Hash != snapshot.SourceHash : sourceExists))
+            {
+                throw new InvalidOperationException("The file changed after its move was verified.");
+            }
+
+            using var connection = _database.OpenConnection();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            var intent = LockAndRead(connection, transaction, importId);
+            if (intent.SeriesId != seriesId || intent.State != EpisodeVersionImportIntentState.Moved || intent.SourceHash != snapshot.SourceHash || intent.SourceSize != snapshot.SourceSize || intent.DestinationPath != snapshot.DestinationPath || intent.SourcePath != snapshot.SourcePath || intent.CopyOnly != snapshot.CopyOnly)
+            {
+                throw new InvalidOperationException("The import changed before registration.");
+            }
+
+            var seriesPath = connection.QuerySingle<string>("SELECT \"Path\" FROM \"Series\" WHERE \"Id\" = @seriesId", new { seriesId }, transaction);
+            var primary = connection.QuerySingleOrDefault<bool?>(@"SELECT p.""IsPrimary"" FROM ""SeriesVersions"" sv
+                JOIN ""CompositeProfileVersions"" p ON p.""Id"" = sv.""CompositeProfileVersionId""
+                JOIN ""Series"" s ON s.""Id"" = sv.""SeriesId"" AND s.""QualityProfileId"" = p.""CompositeProfileId""
+                WHERE sv.""Id"" = @versionId AND sv.""SeriesId"" = @seriesId AND sv.""Retired"" = @retired", new { versionId = intent.SeriesVersionId, seriesId, retired = false }, transaction);
+            var ids = GetLockedEpisodeIds(connection, transaction, importId, intent.SeriesVersionId);
+            var reserved = connection.ExecuteScalar<int>(@"SELECT COUNT(*) FROM ""EpisodeDownloadReservationItems"" i
+                JOIN ""EpisodeDownloadReservations"" r ON r.""Id"" = i.""ReservationId""
+                JOIN ""Episodes"" e ON e.""Id"" = i.""EpisodeId"" AND e.""SeriesId"" = r.""SeriesId""
+                WHERE r.""Id"" = @reservationId AND r.""State"" = @submitted AND r.""SeriesId"" = @seriesId AND r.""SeriesVersionId"" = @versionId
+                AND i.""SeriesVersionId"" = @versionId AND i.""EpisodeId"" IN @ids", new { reservationId = intent.ReservationId, submitted = (int)EpisodeDownloadReservationState.Submitted, seriesId, versionId = intent.SeriesVersionId, ids }, transaction);
+            var occupied = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionAssignments\" WHERE \"SeriesVersionId\" = @versionId AND \"EpisodeId\" IN @ids AND \"VersionEpisodeFileId\" IS NOT NULL", new { versionId = intent.SeriesVersionId, ids }, transaction);
+            var matchingSeason = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"Episodes\" WHERE \"SeriesId\" = @seriesId AND \"Id\" IN @ids AND \"SeasonNumber\" = @season", new { seriesId, ids, season = file.SeasonNumber }, transaction);
+            var hashes = new[] { intent.SourcePath, intent.DestinationPath }.Select(path => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path.ToUpperInvariant())))).ToArray();
+            var pathLocks = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionImportPathLocks\" WHERE \"ImportId\" = @importId AND \"PathHash\" IN @hashes", new { importId, hashes }, transaction);
+            var registered = connection.Query<string>("SELECT \"RelativePath\" FROM \"EpisodeFiles\" WHERE \"SeriesId\" = @seriesId", new { seriesId }, transaction);
+            if (!primary.HasValue || ids.Length == 0 || reserved != ids.Length || matchingSeason != ids.Length || occupied != 0 || pathLocks != 2 ||
+                !Path.GetFullPath(seriesPath).IsParentPath(intent.DestinationPath) || string.IsNullOrWhiteSpace(file.RelativePath) || Path.IsPathRooted(file.RelativePath) ||
+                !PathEqualityComparer.Instance.Equals(Path.GetFullPath(Path.Combine(seriesPath, file.RelativePath)), intent.DestinationPath) ||
+                registered.Any(p => PathEqualityComparer.Instance.Equals(Path.GetFullPath(Path.Combine(seriesPath, p)), intent.DestinationPath)))
+            {
+                throw new InvalidOperationException("The version, episode slots or destination changed before registration.");
+            }
+
+            var insert = @"INSERT INTO ""EpisodeFiles"" (""SeriesId"", ""SeasonNumber"", ""RelativePath"", ""Size"", ""DateAdded"", ""OriginalFilePath"", ""SceneName"", ""ReleaseGroup"", ""ReleaseHash"", ""Quality"", ""IndexerFlags"", ""MediaInfo"", ""Languages"", ""ReleaseType"")
+                VALUES (@SeriesId, @SeasonNumber, @RelativePath, @Size, @DateAdded, @OriginalFilePath, @SceneName, @ReleaseGroup, @ReleaseHash, @Quality, @IndexerFlags, @MediaInfo, @Languages, @ReleaseType)";
+            insert += _database.DatabaseType == DatabaseType.PostgreSQL ? " RETURNING \"Id\"" : "; SELECT last_insert_rowid()";
+            var fileId = connection.ExecuteScalar<int>(insert, file, transaction);
+            var ownerInsert = "INSERT INTO \"VersionEpisodeFiles\" (\"SeriesVersionId\", \"EpisodeFileId\") VALUES (@versionId, @fileId)";
+            ownerInsert += _database.DatabaseType == DatabaseType.PostgreSQL ? " RETURNING \"Id\"" : "; SELECT last_insert_rowid()";
+            var ownerId = connection.ExecuteScalar<int>(ownerInsert, new { versionId = intent.SeriesVersionId, fileId }, transaction);
+            foreach (var episodeId in ids)
+            {
+                var updated = connection.Execute("UPDATE \"EpisodeVersionAssignments\" SET \"VersionEpisodeFileId\" = @ownerId WHERE \"SeriesVersionId\" = @versionId AND \"EpisodeId\" = @episodeId AND \"VersionEpisodeFileId\" IS NULL", new { ownerId, versionId = intent.SeriesVersionId, episodeId }, transaction);
+                if (updated == 0)
+                {
+                    connection.Execute("INSERT INTO \"EpisodeVersionAssignments\" (\"SeriesVersionId\", \"EpisodeId\", \"VersionEpisodeFileId\") VALUES (@versionId, @episodeId, @ownerId)", new { versionId = intent.SeriesVersionId, episodeId, ownerId }, transaction);
+                }
+            }
+
+            if (primary.Value && connection.Execute("UPDATE \"Episodes\" SET \"EpisodeFileId\" = @fileId WHERE \"SeriesId\" = @seriesId AND \"Id\" IN @ids AND \"EpisodeFileId\" = 0", new { fileId, seriesId, ids }, transaction) != ids.Length)
+            {
+                throw new InvalidOperationException("The primary episode file references are already occupied.");
+            }
+
+            connection.Execute("UPDATE \"EpisodeVersionImportIntents\" SET \"State\" = @state, \"RegisteredFileId\" = @fileId, \"UpdatedAt\" = @now WHERE \"Id\" = @importId", new { state = (int)EpisodeVersionImportIntentState.Registered, fileId, now = DateTime.UtcNow, importId }, transaction);
+            transaction.Commit();
+            file.Id = fileId;
+            return fileId;
+        }
+
+        private static int[] GetLockedEpisodeIds(IDbConnection connection, IDbTransaction transaction, int importId, int versionId)
+        {
+            return connection.Query<int>("SELECT \"EpisodeId\" FROM \"EpisodeVersionImportEpisodeLocks\" WHERE \"ImportId\" = @importId AND \"SeriesVersionId\" = @versionId ORDER BY \"EpisodeId\"", new { importId, versionId }, transaction).ToArray();
         }
 
         public void MarkUncertain(int importId, string note)

@@ -80,7 +80,7 @@ namespace NzbDrone.Core.MediaFiles
 
             result.Source = Observe(intent.SourcePath, intent);
             result.Destination = Observe(intent.DestinationPath, intent);
-            if (intent.State != EpisodeVersionImportIntentState.Moved && result.Source == EpisodeVersionImportFileObservation.Matches && result.Destination == EpisodeVersionImportFileObservation.Absent)
+            if ((intent.State == EpisodeVersionImportIntentState.Moving || intent.State == EpisodeVersionImportIntentState.Uncertain) && result.Source == EpisodeVersionImportFileObservation.Matches && result.Destination == EpisodeVersionImportFileObservation.Absent)
             {
                 result.Observation = EpisodeVersionImportObservation.SourceVerifiedDestinationAbsent;
             }

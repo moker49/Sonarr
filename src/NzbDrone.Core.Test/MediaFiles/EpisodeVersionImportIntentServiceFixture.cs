@@ -17,6 +17,60 @@ namespace NzbDrone.Core.Test.MediaFiles
     [TestFixture]
     public class EpisodeVersionImportIntentServiceFixture : DbTest<EpisodeVersionImportIntentService, EpisodeVersionImportIntent>
     {
+        private int PrepareMovedPack()
+        {
+            var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id, _second.Id }, _source, _destination);
+            Subject.BeginMove(id, false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_source)).Returns(false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_destination)).Returns(true);
+            Subject.ConfirmMoved(id);
+            return id;
+        }
+
+        private EpisodeFile NewImportFile()
+        {
+            return new EpisodeFile { SeriesId = _series.Id, SeasonNumber = _first.SeasonNumber, RelativePath = "Show - HD.mkv", Size = 123, DateAdded = DateTime.UtcNow, Quality = new NzbDrone.Core.Qualities.QualityModel(), Languages = new System.Collections.Generic.List<NzbDrone.Core.Languages.Language>() };
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void registers_shared_file_and_version_assignments_atomically(bool primary)
+        {
+            _first.EpisodeFileId = primary ? 0 : 222;
+            _second.EpisodeFileId = primary ? 0 : 333;
+            Mocker.Resolve<BasicRepository<Episode>>().Update(_first);
+            Mocker.Resolve<BasicRepository<Episode>>().Update(_second);
+            var definitions = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>();
+            var definition = definitions.Get(_version.CompositeProfileVersionId);
+            definition.IsPrimary = primary;
+            definitions.Update(definition);
+            var id = PrepareMovedPack();
+
+            var fileId = Subject.RegisterMovedFile(_series.Id, id, NewImportFile());
+
+            Mocker.Resolve<BasicRepository<VersionEpisodeFile>>().All().Should().ContainSingle(f => f.EpisodeFileId == fileId && f.SeriesVersionId == _version.Id);
+            Mocker.Resolve<BasicRepository<EpisodeVersionAssignment>>().All().Should().HaveCount(2);
+            Mocker.Resolve<BasicRepository<Episode>>().Get(_first.Id).EpisodeFileId.Should().Be(primary ? fileId : 222);
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Registered && i.RegisteredFileId == fileId);
+            Subject.GetEpisodeIds(id).Should().HaveCount(2);
+        }
+
+        [Test]
+        public void occupied_primary_link_rolls_back_file_and_all_version_assignments()
+        {
+            var id = PrepareMovedPack();
+            var file = NewImportFile();
+
+            Action register = () => Subject.RegisterMovedFile(_series.Id, id, file);
+
+            register.Should().Throw<InvalidOperationException>();
+            file.Id.Should().Be(0);
+            Mocker.Resolve<BasicRepository<EpisodeFile>>().All().Should().BeEmpty();
+            Mocker.Resolve<BasicRepository<VersionEpisodeFile>>().All().Should().BeEmpty();
+            Mocker.Resolve<BasicRepository<EpisodeVersionAssignment>>().All().Should().BeEmpty();
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Moved);
+        }
+
         private Series _series;
         private SeriesVersion _version;
         private Episode _first;

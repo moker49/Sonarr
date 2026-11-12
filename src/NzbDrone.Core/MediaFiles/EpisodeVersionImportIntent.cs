@@ -9,7 +9,8 @@ namespace NzbDrone.Core.MediaFiles
         Cancelled = 1,
         Moving = 2,
         Moved = 3,
-        Uncertain = 4
+        Uncertain = 4,
+        Registered = 5
     }
 
     public class EpisodeVersionImportIntent : ModelBase
@@ -26,5 +27,6 @@ namespace NzbDrone.Core.MediaFiles
         public string SourceHash { get; set; }
         public bool? CopyOnly { get; set; }
         public string Note { get; set; }
+        public int? RegisteredFileId { get; set; }
     }
 }
