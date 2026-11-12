@@ -81,6 +81,7 @@ namespace NzbDrone.Core.Download
             foreach (var episodeId in episodeIds)
             {
                 connection.Execute("INSERT INTO \"EpisodeDownloadReservationItems\" (\"ReservationId\", \"SeriesVersionId\", \"EpisodeId\") VALUES (@reservationId, @seriesVersionId, @episodeId)", new { reservationId, seriesVersionId, episodeId }, transaction);
+                connection.Execute("INSERT INTO \"EpisodeDownloadReservationEpisodes\" (\"ReservationId\", \"EpisodeId\") VALUES (@reservationId, @episodeId)", new { reservationId, episodeId }, transaction);
             }
 
             transaction.Commit();
@@ -109,6 +110,7 @@ namespace NzbDrone.Core.Download
             }
 
             connection.Execute("DELETE FROM \"EpisodeDownloadReservationItems\" WHERE \"ReservationId\" = @reservationId", new { reservationId }, transaction);
+            connection.Execute("DELETE FROM \"EpisodeDownloadReservationEpisodes\" WHERE \"ReservationId\" = @reservationId", new { reservationId }, transaction);
             connection.Execute("DELETE FROM \"EpisodeDownloadReservationKeys\" WHERE \"ReservationId\" = @reservationId", new { reservationId }, transaction);
             connection.Execute("DELETE FROM \"EpisodeDownloadReservations\" WHERE \"Id\" = @reservationId AND \"SeriesId\" = @seriesId", new { reservationId, seriesId }, transaction);
             transaction.Commit();
@@ -123,7 +125,7 @@ namespace NzbDrone.Core.Download
         public List<int> GetEpisodeIds(int reservationId)
         {
             using var connection = _database.OpenConnection();
-            return connection.Query<int>("SELECT \"EpisodeId\" FROM \"EpisodeDownloadReservationItems\" WHERE \"ReservationId\" = @reservationId ORDER BY \"EpisodeId\"", new { reservationId }).ToList();
+            return connection.Query<int>("SELECT \"EpisodeId\" FROM \"EpisodeDownloadReservationEpisodes\" WHERE \"ReservationId\" = @reservationId ORDER BY \"EpisodeId\"", new { reservationId }).ToList();
         }
 
         public EpisodeDownloadReservation FindByClientDownload(int clientId, string downloadId)

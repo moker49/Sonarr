@@ -18,14 +18,16 @@ namespace NzbDrone.Core.MediaFiles
         private readonly IMediaFileService _files;
         private readonly IEpisodeVersionResolver _versions;
         private readonly IEpisodeVersionImportCompletionService _completion;
+        private readonly IEpisodeVersionDownloadCompletionService _downloadCompletion;
 
-        public EpisodeVersionImportWorkflow(IEpisodeVersionImportIntentService intents, IEpisodeVersionImportTransferService transfers, IMediaFileService files, IEpisodeVersionResolver versions, IEpisodeVersionImportCompletionService completion)
+        public EpisodeVersionImportWorkflow(IEpisodeVersionImportIntentService intents, IEpisodeVersionImportTransferService transfers, IMediaFileService files, IEpisodeVersionResolver versions, IEpisodeVersionImportCompletionService completion, IEpisodeVersionDownloadCompletionService downloadCompletion)
         {
             _intents = intents;
             _transfers = transfers;
             _files = files;
             _versions = versions;
             _completion = completion;
+            _downloadCompletion = downloadCompletion;
         }
 
         public EpisodeFile Resume(int seriesId, int importId, bool copyOnly, EpisodeFile metadata)
@@ -93,6 +95,7 @@ namespace NzbDrone.Core.MediaFiles
                     _completion.Complete(seriesId, importId);
                 }
 
+                _downloadCompletion.Complete(seriesId, intent.ReservationId);
                 return file;
             }
         }

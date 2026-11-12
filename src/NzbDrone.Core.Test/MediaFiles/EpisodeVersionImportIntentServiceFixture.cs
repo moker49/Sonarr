@@ -33,6 +33,87 @@ namespace NzbDrone.Core.Test.MediaFiles
         }
 
         [Test]
+        public void download_completion_waits_for_the_whole_pack_then_frees_slots_once()
+        {
+            using (var connection = Mocker.Resolve<IMainDatabase>().OpenConnection())
+            {
+                Dapper.SqlMapper.Execute(connection, "INSERT INTO \"EpisodeDownloadReservationEpisodes\" (\"ReservationId\", \"EpisodeId\") SELECT \"ReservationId\", \"EpisodeId\" FROM \"EpisodeDownloadReservationItems\"");
+            }
+            var completion = Mocker.Resolve<EpisodeVersionDownloadCompletionService>();
+            completion.Complete(_series.Id, _reservation.Id).Should().BeFalse();
+            var definition = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Get(_version.CompositeProfileVersionId);
+            definition.IsPrimary = false;
+            Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Update(definition);
+            var id = PrepareMovedPack();
+            Subject.RegisterMovedFile(_series.Id, id, NewImportFile());
+            Mocker.Resolve<EpisodeVersionImportCompletionService>().Complete(_series.Id, id);
+
+            completion.Complete(_series.Id, _reservation.Id).Should().BeTrue();
+            completion.Complete(_series.Id, _reservation.Id).Should().BeTrue();
+
+            var reservations = Mocker.Resolve<EpisodeDownloadReservationService>();
+            reservations.FindByClientDownload(7, "job").State.Should().Be(EpisodeDownloadReservationState.Imported);
+            reservations.GetEpisodeIds(_reservation.Id).Should().HaveCount(2);
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.Download.History.DownloadHistory>>().All().Should().HaveCount(2).And.ContainSingle(h => h.EventType == NzbDrone.Core.Download.History.DownloadHistoryEventType.DownloadImported);
+            reservations.Reserve(_version.Id, "pack", new[] { _first.Id }).Should().BePositive();
+            using var check = Mocker.Resolve<IMainDatabase>().OpenConnection();
+            Dapper.SqlMapper.ExecuteScalar<int>(check, "SELECT COUNT(*) FROM \"EpisodeVersionDownloadCompletions\" WHERE \"PublishedAt\" IS NULL").Should().Be(1);
+        }
+
+        [Test]
+        public void completion_cannot_release_a_partially_imported_pack()
+        {
+            using (var connection = Mocker.Resolve<IMainDatabase>().OpenConnection())
+            {
+                Dapper.SqlMapper.Execute(connection, "INSERT INTO \"EpisodeDownloadReservationEpisodes\" (\"ReservationId\", \"EpisodeId\") SELECT \"ReservationId\", \"EpisodeId\" FROM \"EpisodeDownloadReservationItems\"");
+            }
+            var definition = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Get(_version.CompositeProfileVersionId);
+            definition.IsPrimary = false;
+            Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Update(definition);
+            var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, _destination);
+            Subject.BeginMove(id, false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_source)).Returns(false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_destination)).Returns(true);
+            Subject.ConfirmMoved(id);
+            Subject.RegisterMovedFile(_series.Id, id, NewImportFile());
+            Mocker.Resolve<EpisodeVersionImportCompletionService>().Complete(_series.Id, id);
+
+            Mocker.Resolve<EpisodeVersionDownloadCompletionService>().Complete(_series.Id, _reservation.Id).Should().BeFalse();
+
+            Mocker.Resolve<EpisodeDownloadReservationService>().FindByClientDownload(7, "job").State.Should().Be(EpisodeDownloadReservationState.Submitted);
+            using var check = Mocker.Resolve<IMainDatabase>().OpenConnection();
+            Dapper.SqlMapper.ExecuteScalar<int>(check, "SELECT COUNT(*) FROM \"EpisodeDownloadReservationItems\"").Should().Be(2);
+            Dapper.SqlMapper.ExecuteScalar<int>(check, "SELECT COUNT(*) FROM \"EpisodeVersionDownloadCompletions\"").Should().Be(0);
+        }
+
+        [Test]
+        public void download_completion_failure_preserves_reservation_and_rolls_back_download_history()
+        {
+            using (var connection = Mocker.Resolve<IMainDatabase>().OpenConnection())
+            {
+                Dapper.SqlMapper.Execute(connection, "INSERT INTO \"EpisodeDownloadReservationEpisodes\" (\"ReservationId\", \"EpisodeId\") SELECT \"ReservationId\", \"EpisodeId\" FROM \"EpisodeDownloadReservationItems\"");
+            }
+            var definition = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Get(_version.CompositeProfileVersionId);
+            definition.IsPrimary = false;
+            Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Update(definition);
+            var id = PrepareMovedPack();
+            Subject.RegisterMovedFile(_series.Id, id, NewImportFile());
+            Mocker.Resolve<EpisodeVersionImportCompletionService>().Complete(_series.Id, id);
+            using (var connection = Mocker.Resolve<IMainDatabase>().OpenConnection())
+            {
+                Dapper.SqlMapper.Execute(connection, "INSERT INTO \"EpisodeVersionDownloadCompletions\" (\"ReservationId\", \"CreatedAt\") VALUES (@reservationId, @now)", new { reservationId = _reservation.Id, now = DateTime.UtcNow });
+            }
+
+            Action complete = () => Mocker.Resolve<EpisodeVersionDownloadCompletionService>().Complete(_series.Id, _reservation.Id);
+
+            complete.Should().Throw<Exception>();
+            Mocker.Resolve<EpisodeDownloadReservationService>().FindByClientDownload(7, "job").State.Should().Be(EpisodeDownloadReservationState.Submitted);
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.Download.History.DownloadHistory>>().All().Should().ContainSingle(h => h.EventType == NzbDrone.Core.Download.History.DownloadHistoryEventType.FileImported);
+            using var check = Mocker.Resolve<IMainDatabase>().OpenConnection();
+            Dapper.SqlMapper.ExecuteScalar<int>(check, "SELECT COUNT(*) FROM \"EpisodeDownloadReservationItems\"").Should().Be(2);
+        }
+
+        [Test]
         public void completion_writes_history_once_and_preserves_episode_coverage_after_unlocking()
         {
             var definition = Mocker.Resolve<BasicRepository<CompositeProfileVersion>>().Get(_version.CompositeProfileVersionId);

@@ -185,7 +185,8 @@ namespace NzbDrone.Core.Test.Download
             var history = Subject.ForSeries(_series.Id).Single();
             history.State.Should().Be(EpisodeDownloadReservationState.Failed);
             history.Note.Should().Be("Client explicitly rejected the job");
-            Subject.GetEpisodeIds(reservation).Should().BeEmpty();
+            Subject.GetEpisodeIds(reservation).Should().Equal(_first.Id);
+            Mocker.Resolve<BasicRepository<EpisodeDownloadReservationItem>>().All().Should().BeEmpty();
             Subject.HasUnboundForClient(42).Should().BeFalse();
             Subject.Reserve(_sdr.Id, new[] { "guid:one", "title:one" }, new[] { _first.Id }).Should().BePositive();
         }

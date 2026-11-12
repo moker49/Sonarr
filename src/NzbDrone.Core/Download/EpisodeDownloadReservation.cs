@@ -9,7 +9,8 @@ namespace NzbDrone.Core.Download
         Dispatching = 1,
         Submitted = 2,
         Uncertain = 3,
-        Failed = 4
+        Failed = 4,
+        Imported = 5
     }
 
     public class EpisodeDownloadReservation : ModelBase
@@ -17,6 +18,7 @@ namespace NzbDrone.Core.Download
         public int SeriesId { get; set; }
         public int SeriesVersionId { get; set; }
         public string ReleaseKey { get; set; }
+        public string OriginalReleaseKey { get; set; }
         public DateTime CreatedAt { get; set; }
         public EpisodeDownloadReservationState State { get; set; }
         public int? DownloadClientId { get; set; }
