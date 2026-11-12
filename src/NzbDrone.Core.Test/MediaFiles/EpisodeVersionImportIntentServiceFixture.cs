@@ -39,6 +39,72 @@ namespace NzbDrone.Core.Test.MediaFiles
             _source = @"C:\Downloads\Show.mkv".AsOsAgnostic();
             _destination = @"C:\TV\Show\Show - HD.mkv".AsOsAgnostic();
             Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_source)).Returns(true);
+            Mocker.GetMock<IEpisodeImportFileFingerprintService>().Setup(f => f.Read(It.IsAny<string>())).Returns(new EpisodeImportFileFingerprint { Size = 123, Hash = new string('A', 64) });
+        }
+
+        [Test]
+        public void move_evidence_persists_until_a_matching_move_is_confirmed()
+        {
+            var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, _destination);
+            Subject.BeginMove(id, false);
+
+            var moving = Subject.GetActive(_series.Id).Should().ContainSingle().Which;
+            moving.State.Should().Be(EpisodeVersionImportIntentState.Moving);
+            moving.SourceSize.Should().Be(123);
+            moving.SourceHash.Should().Be(new string('A', 64));
+            Action cancel = () => Subject.CancelPrepared(id);
+            cancel.Should().Throw<InvalidOperationException>();
+
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_source)).Returns(false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_destination)).Returns(true);
+            Subject.ConfirmMoved(id);
+
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Moved);
+            Action overlap = () => Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, @"C:\TV\Show\Other.mkv".AsOsAgnostic());
+            overlap.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void mismatched_destination_cannot_be_confirmed_and_locks_are_retained()
+        {
+            var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, _destination);
+            Subject.BeginMove(id, false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_source)).Returns(false);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_destination)).Returns(true);
+            Mocker.GetMock<IEpisodeImportFileFingerprintService>().Setup(f => f.Read(_destination)).Returns(new EpisodeImportFileFingerprint { Size = 123, Hash = new string('B', 64) });
+
+            Action confirm = () => Subject.ConfirmMoved(id);
+            confirm.Should().Throw<InvalidOperationException>();
+            Subject.MarkUncertain(id, "Destination does not match source evidence");
+
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Uncertain);
+            Action cancel = () => Subject.CancelPrepared(id);
+            cancel.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void copy_confirmation_requires_the_original_source_to_remain_unchanged()
+        {
+            var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, _destination);
+            Subject.BeginMove(id, true);
+            Mocker.GetMock<IDiskProvider>().Setup(d => d.FileExists(_destination)).Returns(true);
+            Mocker.GetMock<IEpisodeImportFileFingerprintService>().Setup(f => f.Read(_source)).Returns(new EpisodeImportFileFingerprint { Size = 123, Hash = new string('B', 64) });
+
+            Action confirm = () => Subject.ConfirmMoved(id);
+            confirm.Should().Throw<InvalidOperationException>();
+            Subject.GetActive(_series.Id).Should().ContainSingle(i => i.State == EpisodeVersionImportIntentState.Moving);
+        }
+
+        [Test]
+        public void refuses_to_start_if_an_episode_became_occupied_after_preparation()
+        {
+            var id = Subject.Prepare(_reservation.Id, 7, "job", new[] { _first.Id }, _source, _destination);
+            Db.Insert(new EpisodeVersionAssignment { SeriesVersionId = _version.Id, EpisodeId = _first.Id, VersionEpisodeFileId = 99 });
+
+            Action begin = () => Subject.BeginMove(id, false);
+
+            begin.Should().Throw<InvalidOperationException>();
+            Subject.GetPrepared(_series.Id).Should().ContainSingle(i => i.Id == id);
         }
 
         [Test]

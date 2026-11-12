@@ -6,7 +6,10 @@ namespace NzbDrone.Core.MediaFiles
     public enum EpisodeVersionImportIntentState
     {
         Prepared = 0,
-        Cancelled = 1
+        Cancelled = 1,
+        Moving = 2,
+        Moved = 3,
+        Uncertain = 4
     }
 
     public class EpisodeVersionImportIntent : ModelBase
@@ -19,5 +22,9 @@ namespace NzbDrone.Core.MediaFiles
         public EpisodeVersionImportIntentState State { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+        public long? SourceSize { get; set; }
+        public string SourceHash { get; set; }
+        public bool? CopyOnly { get; set; }
+        public string Note { get; set; }
     }
 }
