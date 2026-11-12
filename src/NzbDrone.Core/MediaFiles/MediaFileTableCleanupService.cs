@@ -17,14 +17,17 @@ namespace NzbDrone.Core.MediaFiles
     {
         private readonly IMediaFileService _mediaFileService;
         private readonly IEpisodeService _episodeService;
+        private readonly IVersionEpisodeFileAssignmentService _versionFiles;
         private readonly Logger _logger;
 
         public MediaFileTableCleanupService(IMediaFileService mediaFileService,
                                             IEpisodeService episodeService,
+                                            IVersionEpisodeFileAssignmentService versionFiles,
                                             Logger logger)
         {
             _mediaFileService = mediaFileService;
             _episodeService = episodeService;
+            _versionFiles = versionFiles;
             _logger = logger;
         }
 
@@ -32,6 +35,7 @@ namespace NzbDrone.Core.MediaFiles
         {
             var seriesFiles = _mediaFileService.GetFilesBySeries(series.Id);
             var episodes = _episodeService.GetEpisodeBySeries(series.Id);
+            var versionFileIds = _versionFiles.GetOwnedFileIds(series.Id);
 
             var filesOnDiskKeys = new HashSet<string>(filesOnDisk, PathEqualityComparer.Instance);
 
@@ -42,6 +46,16 @@ namespace NzbDrone.Core.MediaFiles
 
                 try
                 {
+                    if (versionFileIds.Contains(episodeFile.Id))
+                    {
+                        if (!filesOnDiskKeys.Contains(episodeFilePath))
+                        {
+                            _logger.Warn("Version-owned file [{0}] is missing; retaining its database record until version-aware cleanup is available", episodeFilePath);
+                        }
+
+                        continue;
+                    }
+
                     if (!filesOnDiskKeys.Contains(episodeFilePath))
                     {
                         _logger.Debug("File [{0}] no longer exists on disk, removing from db", episodeFilePath);

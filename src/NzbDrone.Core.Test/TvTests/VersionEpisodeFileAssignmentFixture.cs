@@ -43,6 +43,8 @@ namespace NzbDrone.Core.Test.TvTests
             AllStoredModels.Should().HaveCount(2);
             AllStoredModels.Should().OnlyContain(a => a.SeriesVersionId == _version.Id && a.VersionEpisodeFileId != null);
             AllStoredModels[0].VersionEpisodeFileId.Should().Be(AllStoredModels[1].VersionEpisodeFileId);
+            Subject.GetOwnedFileIds(_series.Id).Should().ContainSingle().Which.Should().Be(_file.Id);
+            Subject.GetOwnedFileIds(_series.Id + 100).Should().BeEmpty();
         }
 
         [Test]

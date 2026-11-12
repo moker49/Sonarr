@@ -36,6 +36,22 @@ namespace NzbDrone.Core.Test.MediaFiles
             Mocker.GetMock<IEpisodeService>()
                   .Setup(c => c.GetEpisodeBySeries(It.IsAny<int>()))
                   .Returns(_episodes);
+
+            Mocker.GetMock<IVersionEpisodeFileAssignmentService>().Setup(v => v.GetOwnedFileIds(It.IsAny<int>())).Returns(new HashSet<int>());
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void retains_version_owned_files_even_when_missing_or_not_linked_to_primary_episode(bool onDisk)
+        {
+            var episodeFile = Builder<EpisodeFile>.CreateNew().Build();
+            GivenEpisodeFiles(new[] { episodeFile });
+            GivenFilesAreNotAttachedToEpisode();
+            Mocker.GetMock<IVersionEpisodeFileAssignmentService>().Setup(v => v.GetOwnedFileIds(_series.Id)).Returns(new HashSet<int> { episodeFile.Id });
+
+            Subject.Clean(_series, onDisk ? FilesOnDisk(new[] { episodeFile }) : new List<string>());
+
+            Mocker.GetMock<IMediaFileService>().Verify(c => c.Delete(It.IsAny<EpisodeFile>(), It.IsAny<DeleteMediaFileReason>()), Times.Never());
         }
 
         private void GivenEpisodeFiles(IEnumerable<EpisodeFile> episodeFiles)

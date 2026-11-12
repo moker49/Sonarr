@@ -29,6 +29,18 @@ namespace NzbDrone.Core.Test.Housekeeping.Housekeepers
         }
 
         [Test]
+        public void should_preserve_version_owned_files_without_a_primary_episode_link()
+        {
+            var file = Builder<EpisodeFile>.CreateNew().With(h => h.Languages = new List<Language> { Language.English }).With(h => h.Quality = new QualityModel()).BuildNew();
+            Db.Insert(file);
+            Db.Insert(new VersionEpisodeFile { EpisodeFileId = file.Id, SeriesVersionId = 1 });
+
+            Subject.Clean();
+
+            AllStoredModels.Should().ContainSingle(f => f.Id == file.Id);
+        }
+
+        [Test]
         public void should_not_delete_unorphaned_episode_files()
         {
             var episodeFiles = Builder<EpisodeFile>.CreateListOfSize(2)

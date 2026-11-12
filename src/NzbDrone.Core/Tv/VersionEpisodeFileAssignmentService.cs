@@ -10,6 +10,7 @@ namespace NzbDrone.Core.Tv
     public interface IVersionEpisodeFileAssignmentService
     {
         void AssignUnoccupiedFile(int seriesVersionId, int episodeFileId, IReadOnlyCollection<int> episodeIds);
+        HashSet<int> GetOwnedFileIds(int seriesId);
     }
 
     public class VersionEpisodeFileAssignmentService : IVersionEpisodeFileAssignmentService
@@ -19,6 +20,14 @@ namespace NzbDrone.Core.Tv
         public VersionEpisodeFileAssignmentService(IMainDatabase database)
         {
             _database = database;
+        }
+
+        public HashSet<int> GetOwnedFileIds(int seriesId)
+        {
+            using var connection = _database.OpenConnection();
+            return connection.Query<int>(@"SELECT vf.""EpisodeFileId"" FROM ""VersionEpisodeFiles"" vf
+                JOIN ""EpisodeFiles"" f ON f.""Id"" = vf.""EpisodeFileId""
+                WHERE f.""SeriesId"" = @seriesId", new { seriesId }).ToHashSet();
         }
 
         // This is intentionally limited to empty slots. Replacement requires its own
