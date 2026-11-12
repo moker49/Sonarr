@@ -60,7 +60,8 @@ namespace NzbDrone.Core.Tv
             var episodeCount = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"Episodes\" WHERE \"SeriesId\" = @seriesId AND \"Id\" IN @episodeIds", new { seriesId, episodeIds }, transaction);
             var existingOwner = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"VersionEpisodeFiles\" WHERE \"EpisodeFileId\" = @episodeFileId", new { episodeFileId }, transaction);
             var occupied = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionAssignments\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"EpisodeId\" IN @episodeIds AND \"VersionEpisodeFileId\" IS NOT NULL", new { seriesVersionId, episodeIds }, transaction);
-            if (activeVersion != 1 || fileCount != 1 || episodeCount != episodeIds.Count || existingOwner != 0 || occupied != 0)
+            var importing = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionImportEpisodeLocks\" WHERE \"SeriesVersionId\" = @seriesVersionId AND \"EpisodeId\" IN @episodeIds", new { seriesVersionId, episodeIds }, transaction);
+            if (activeVersion != 1 || fileCount != 1 || episodeCount != episodeIds.Count || existingOwner != 0 || occupied != 0 || importing != 0)
             {
                 throw new InvalidOperationException("The version, file, or episode assignments changed or belong to another series.");
             }

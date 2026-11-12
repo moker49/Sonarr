@@ -142,6 +142,7 @@ namespace NzbDrone.Core.Datastore
             Mapper.Entity<SeriesVersion>("SeriesVersions").RegisterModel();
             Mapper.Entity<EpisodeVersionAssignment>("EpisodeVersionAssignments").RegisterModel();
             Mapper.Entity<VersionEpisodeFile>("VersionEpisodeFiles").RegisterModel();
+            Mapper.Entity<EpisodeVersionImportIntent>("EpisodeVersionImportIntents").RegisterModel();
             Mapper.Entity<EpisodeDownloadReservation>("EpisodeDownloadReservations").RegisterModel();
             Mapper.Entity<EpisodeDownloadReservationItem>("EpisodeDownloadReservationItems").RegisterModel();
             Mapper.Entity<EpisodeDownloadReservationKey>("EpisodeDownloadReservationKeys").RegisterModel();
