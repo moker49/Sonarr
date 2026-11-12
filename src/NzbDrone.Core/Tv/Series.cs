@@ -67,6 +67,11 @@ namespace NzbDrone.Core.Tv
             return string.Format("[{0}][{1}]", TvdbId, Title.NullSafe());
         }
 
+        public Series CloneForVersion()
+        {
+            return (Series)MemberwiseClone();
+        }
+
         public void ApplyChanges(Series otherSeries)
         {
             TvdbId = otherSeries.TvdbId;

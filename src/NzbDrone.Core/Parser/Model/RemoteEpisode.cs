@@ -25,6 +25,7 @@ namespace NzbDrone.Core.Parser.Model
         public SeriesMatchType SeriesMatchType { get; set; }
         public List<Language> Languages { get; set; }
         public ReleaseSourceType ReleaseSource { get; set; }
+        public int? SeriesVersionId { get; set; }
 
         public RemoteEpisode()
         {
@@ -36,6 +37,15 @@ namespace NzbDrone.Core.Parser.Model
         public bool IsRecentEpisode()
         {
             return Episodes.Any(e => e.AirDateUtc >= DateTime.UtcNow.Date.AddDays(-14));
+        }
+
+        public RemoteEpisode CloneForVersion()
+        {
+            var copy = (RemoteEpisode)MemberwiseClone();
+            copy.Episodes = Episodes?.ToList();
+            copy.CustomFormats = CustomFormats?.ToList();
+            copy.Languages = Languages?.ToList();
+            return copy;
         }
 
         public override string ToString()

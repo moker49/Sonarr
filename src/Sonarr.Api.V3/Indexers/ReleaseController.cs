@@ -79,6 +79,11 @@ namespace Sonarr.Api.V3.Indexers
                 throw new NzbDroneClientException(HttpStatusCode.NotFound, "Couldn't find requested release in cache, try searching again");
             }
 
+            if (remoteEpisode.SeriesVersionId.HasValue || release.SeriesVersionId.HasValue)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.Conflict, "Version-aware download processing is not yet available.");
+            }
+
             try
             {
                 if (release.ShouldOverride == true)
@@ -170,26 +175,33 @@ namespace Sonarr.Api.V3.Indexers
 
         [HttpGet]
         [Produces("application/json")]
-        public async Task<List<ReleaseResource>> GetReleases(int? seriesId, int? episodeId, int? seasonNumber)
+        public async Task<List<ReleaseResource>> GetReleases(int? seriesId, int? episodeId, int? seasonNumber, int? seriesVersionId = null)
         {
             if (episodeId.HasValue)
             {
-                return await GetEpisodeReleases(episodeId.Value);
+                return await GetEpisodeReleases(episodeId.Value, seriesVersionId);
             }
 
             if (seriesId.HasValue && seasonNumber.HasValue)
             {
-                return await GetSeasonReleases(seriesId.Value, seasonNumber.Value);
+                return await GetSeasonReleases(seriesId.Value, seasonNumber.Value, seriesVersionId);
+            }
+
+            if (seriesVersionId.HasValue)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.BadRequest, "A version search requires an episode or a series and season.");
             }
 
             return await GetRss();
         }
 
-        private async Task<List<ReleaseResource>> GetEpisodeReleases(int episodeId)
+        private async Task<List<ReleaseResource>> GetEpisodeReleases(int episodeId, int? seriesVersionId)
         {
             try
             {
-                var decisions = await _releaseSearchService.EpisodeSearch(episodeId, true, true);
+                var decisions = seriesVersionId.HasValue
+                    ? await _releaseSearchService.EpisodeSearch(episodeId, true, true, seriesVersionId)
+                    : await _releaseSearchService.EpisodeSearch(episodeId, true, true);
                 var prioritizedDecisions = _prioritizeDownloadDecision.PrioritizeDecisions(decisions);
 
                 return MapDecisions(prioritizedDecisions);
@@ -205,11 +217,13 @@ namespace Sonarr.Api.V3.Indexers
             }
         }
 
-        private async Task<List<ReleaseResource>> GetSeasonReleases(int seriesId, int seasonNumber)
+        private async Task<List<ReleaseResource>> GetSeasonReleases(int seriesId, int seasonNumber, int? seriesVersionId)
         {
             try
             {
-                var decisions = await _releaseSearchService.SeasonSearch(seriesId, seasonNumber, false, false, true, true);
+                var decisions = seriesVersionId.HasValue
+                    ? await _releaseSearchService.SeasonSearch(seriesId, seasonNumber, _episodeService.GetEpisodesBySeason(seriesId, seasonNumber), false, true, true, seriesVersionId)
+                    : await _releaseSearchService.SeasonSearch(seriesId, seasonNumber, false, false, true, true);
                 var prioritizedDecisions = _prioritizeDownloadDecision.PrioritizeDecisions(decisions);
 
                 return MapDecisions(prioritizedDecisions);
@@ -244,7 +258,8 @@ namespace Sonarr.Api.V3.Indexers
 
         private string GetCacheKey(ReleaseResource resource)
         {
-            return string.Concat(resource.IndexerId, "_", resource.Guid);
+            var guid = resource.Guid ?? string.Empty;
+            return string.Concat(resource.IndexerId, "_", guid.Length, "_", guid, "_", resource.SeriesVersionId?.ToString() ?? "ordinary");
         }
     }
 }

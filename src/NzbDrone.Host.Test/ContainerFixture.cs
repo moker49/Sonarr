@@ -18,6 +18,8 @@ using NzbDrone.Core.Datastore.Extensions;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.Indexers;
+using NzbDrone.Core.IndexerSearch;
+using NzbDrone.Core.DecisionEngine;
 using NzbDrone.Core.Messaging.Commands;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Profiles.Qualities;
@@ -75,6 +77,8 @@ namespace NzbDrone.App.Test
             _container.GetRequiredService<ISeriesVersionAssignmentPlanner>().Should().NotBeNull();
             _container.GetRequiredService<IEpisodeDownloadReservationService>().Should().NotBeNull();
             _container.GetRequiredService<IEpisodeReservationRecoveryService>().Should().NotBeNull();
+            _container.GetRequiredService<IManagedEpisodeWantedService>().Should().NotBeNull();
+            _container.GetRequiredService<IEpisodeVersionDecisionContext>().Should().NotBeNull();
         }
 
         [Test]

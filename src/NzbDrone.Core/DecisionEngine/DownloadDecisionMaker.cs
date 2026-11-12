@@ -12,6 +12,7 @@ using NzbDrone.Core.Download.Aggregation;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Profiles.Qualities;
 
 namespace NzbDrone.Core.DecisionEngine
 {
@@ -28,6 +29,8 @@ namespace NzbDrone.Core.DecisionEngine
         private readonly ICustomFormatCalculationService _formatCalculator;
         private readonly IRemoteEpisodeAggregationService _aggregationService;
         private readonly ISceneMappingService _sceneMappingService;
+        private readonly IEpisodeVersionDecisionContext _versionContexts;
+        private readonly ICompositeProfileDraftService _composites;
         private readonly Logger _logger;
 
         public DownloadDecisionMaker(IEnumerable<IDownloadDecisionEngineSpecification> specifications,
@@ -35,6 +38,8 @@ namespace NzbDrone.Core.DecisionEngine
                                      ICustomFormatCalculationService formatService,
                                      IRemoteEpisodeAggregationService aggregationService,
                                      ISceneMappingService sceneMappingService,
+                                     IEpisodeVersionDecisionContext versionContexts,
+                                     ICompositeProfileDraftService composites,
                                      Logger logger)
         {
             _specifications = specifications;
@@ -42,6 +47,8 @@ namespace NzbDrone.Core.DecisionEngine
             _formatCalculator = formatService;
             _aggregationService = aggregationService;
             _sceneMappingService = sceneMappingService;
+            _versionContexts = versionContexts;
+            _composites = composites;
             _logger = logger;
         }
 
@@ -67,6 +74,7 @@ namespace NzbDrone.Core.DecisionEngine
             }
 
             var reportNumber = 1;
+            HashSet<int> compositeIds = null;
 
             foreach (var report in reports)
             {
@@ -110,17 +118,44 @@ namespace NzbDrone.Core.DecisionEngine
                         {
                             decision = new DownloadDecision(remoteEpisode, new DownloadRejection(DownloadRejectionReason.UnknownEpisode, "Unable to identify correct episode(s) using release name and scene mappings"));
                         }
+                        else if (searchCriteria?.SeriesVersionId == null)
+                        {
+                            compositeIds ??= _composites.GetProfileIds() ?? throw new InvalidOperationException("Composite profile information is unavailable.");
+                            if (compositeIds.Contains(remoteEpisode.Series.QualityProfileId))
+                            {
+                                decision = new DownloadDecision(remoteEpisode, new DownloadRejection(DownloadRejectionReason.VersionedDownloadsNotReady, "Version-aware download processing is not yet available."));
+                            }
+                            else
+                            {
+                                decision = EvaluateMappedEpisode(remoteEpisode, report, searchCriteria);
+                            }
+                        }
                         else
                         {
-                            _aggregationService.Augment(remoteEpisode);
+                            if (searchCriteria.SeriesVersionId is int versionId)
+                            {
+                                if (searchCriteria.Series == null || searchCriteria.Series.Id != remoteEpisode.Series.Id)
+                                {
+                                    throw new InvalidOperationException("The requested version does not belong to the matched series.");
+                                }
 
-                            remoteEpisode.CustomFormats = _formatCalculator.ParseCustomFormat(remoteEpisode, remoteEpisode.Release.Size);
-                            remoteEpisode.CustomFormatScore = remoteEpisode?.Series?.QualityProfile?.Value.CalculateCustomFormatScore(remoteEpisode.CustomFormats) ?? 0;
+                                remoteEpisode = _versionContexts.ForVersion(remoteEpisode, versionId);
+                                if (remoteEpisode?.SeriesVersionId != versionId)
+                                {
+                                    throw new InvalidOperationException("The requested version context could not be restored.");
+                                }
+                            }
 
-                            _logger.Trace("Custom Format Score of '{0}' [{1}] calculated for '{2}'", remoteEpisode.CustomFormatScore, remoteEpisode.CustomFormats?.ConcatToString(), report.Title);
-
-                            remoteEpisode.DownloadAllowed = remoteEpisode.Episodes.Any();
-                            decision = GetDecisionForReport(remoteEpisode, searchCriteria);
+                            decision = EvaluateMappedEpisode(remoteEpisode, report, searchCriteria);
+                            if (searchCriteria.SeriesVersionId.HasValue)
+                            {
+                                // Search evaluation can be exercised safely before the
+                                // version-aware dispatch and import pipeline is enabled.
+                                decision = new DownloadDecision(remoteEpisode, decision.Rejections.Concat(new[]
+                                {
+                                    new DownloadRejection(DownloadRejectionReason.VersionedDownloadsNotReady, "Version-aware download processing is not yet available.")
+                                }).ToArray());
+                            }
                         }
                     }
 
@@ -192,6 +227,16 @@ namespace NzbDrone.Core.DecisionEngine
                     yield return decision;
                 }
             }
+        }
+
+        private DownloadDecision EvaluateMappedEpisode(RemoteEpisode remoteEpisode, ReleaseInfo report, SearchCriteriaBase searchCriteria)
+        {
+            _aggregationService.Augment(remoteEpisode);
+            remoteEpisode.CustomFormats = _formatCalculator.ParseCustomFormat(remoteEpisode, remoteEpisode.Release.Size);
+            remoteEpisode.CustomFormatScore = remoteEpisode?.Series?.QualityProfile?.Value.CalculateCustomFormatScore(remoteEpisode.CustomFormats) ?? 0;
+            _logger.Trace("Custom Format Score of '{0}' [{1}] calculated for '{2}'", remoteEpisode.CustomFormatScore, remoteEpisode.CustomFormats?.ConcatToString(), report.Title);
+            remoteEpisode.DownloadAllowed = remoteEpisode.Episodes.Any();
+            return GetDecisionForReport(remoteEpisode, searchCriteria);
         }
 
         private DownloadDecision GetDecisionForReport(RemoteEpisode remoteEpisode, SearchCriteriaBase searchCriteria = null)

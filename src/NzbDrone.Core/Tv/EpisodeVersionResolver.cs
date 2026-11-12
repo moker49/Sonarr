@@ -14,6 +14,7 @@ namespace NzbDrone.Core.Tv
         public int EpisodeId { get; set; }
         public int SeriesId { get; set; }
         public int QualityProfileId { get; set; }
+        public int ParentQualityProfileId { get; set; }
         public int? SeriesVersionId { get; set; }
         public int? CompositeProfileVersionId { get; set; }
         public int? EpisodeFileId { get; set; }
@@ -26,6 +27,7 @@ namespace NzbDrone.Core.Tv
     public interface IEpisodeVersionResolver
     {
         List<ResolvedEpisodeVersion> Resolve(int episodeId);
+        Dictionary<int, List<ResolvedEpisodeVersion>> ResolveMany(IReadOnlyCollection<int> episodeIds);
     }
 
     public class EpisodeVersionResolver : IEpisodeVersionResolver
@@ -39,8 +41,25 @@ namespace NzbDrone.Core.Tv
 
         public List<ResolvedEpisodeVersion> Resolve(int episodeId)
         {
+            return ResolveMany(new[] { episodeId })[episodeId];
+        }
+
+        public Dictionary<int, List<ResolvedEpisodeVersion>> ResolveMany(IReadOnlyCollection<int> episodeIds)
+        {
+            if (episodeIds == null || episodeIds.Count == 0 || episodeIds.Any(id => id <= 0) || episodeIds.Distinct().Count() != episodeIds.Count)
+            {
+                throw new ArgumentException("A nonempty set of distinct episode IDs is required.", nameof(episodeIds));
+            }
+
             using var connection = _database.OpenConnection();
             using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+            var result = episodeIds.ToDictionary(id => id, id => Resolve(connection, transaction, id));
+            transaction.Commit();
+            return result;
+        }
+
+        private static List<ResolvedEpisodeVersion> Resolve(IDbConnection connection, IDbTransaction transaction, int episodeId)
+        {
             var episode = connection.QuerySingleOrDefault<EpisodeContext>("SELECT e.\"Id\" AS \"EpisodeId\", e.\"SeriesId\", e.\"EpisodeFileId\", e.\"Monitored\" AS \"EpisodeMonitored\", s.\"Monitored\" AS \"SeriesMonitored\", s.\"QualityProfileId\" FROM \"Episodes\" e JOIN \"Series\" s ON s.\"Id\" = e.\"SeriesId\" WHERE e.\"Id\" = @episodeId", new { episodeId }, transaction);
             if (episode == null)
             {
@@ -50,10 +69,9 @@ namespace NzbDrone.Core.Tv
             var definitions = connection.Query<CompositeProfileVersion>("SELECT * FROM \"CompositeProfileVersions\" WHERE \"CompositeProfileId\" = @QualityProfileId ORDER BY \"Priority\"", episode, transaction).ToList();
             if (definitions.Count == 0)
             {
-                transaction.Commit();
                 return new List<ResolvedEpisodeVersion>
                 {
-                    new ResolvedEpisodeVersion { EpisodeId = episodeId, SeriesId = episode.SeriesId, QualityProfileId = episode.QualityProfileId, EpisodeFileId = episode.EpisodeFileId == 0 ? null : episode.EpisodeFileId, IsPrimary = true, Monitored = episode.SeriesMonitored && episode.EpisodeMonitored }
+                    new ResolvedEpisodeVersion { EpisodeId = episodeId, SeriesId = episode.SeriesId, QualityProfileId = episode.QualityProfileId, ParentQualityProfileId = episode.QualityProfileId, EpisodeFileId = episode.EpisodeFileId == 0 ? null : episode.EpisodeFileId, IsPrimary = true, Monitored = episode.SeriesMonitored && episode.EpisodeMonitored }
                 };
             }
 
@@ -78,6 +96,7 @@ namespace NzbDrone.Core.Tv
                     EpisodeId = episodeId,
                     SeriesId = episode.SeriesId,
                     QualityProfileId = definition.QualityProfileId,
+                    ParentQualityProfileId = episode.QualityProfileId,
                     SeriesVersionId = row.SeriesVersionId,
                     CompositeProfileVersionId = definition.Id,
                     EpisodeFileId = row.EpisodeFileId,
@@ -87,7 +106,6 @@ namespace NzbDrone.Core.Tv
                     Monitored = episode.SeriesMonitored && episode.EpisodeMonitored
                 };
             }).ToList();
-            transaction.Commit();
             return result;
         }
 

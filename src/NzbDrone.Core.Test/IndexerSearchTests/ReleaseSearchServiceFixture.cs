@@ -140,6 +140,64 @@ namespace NzbDrone.Core.Test.IndexerSearchTests
             return result;
         }
 
+        private void GivenVersion(int seriesVersionId)
+        {
+            Mocker.GetMock<IEpisodeVersionResolver>()
+                .Setup(v => v.ResolveMany(It.IsAny<IReadOnlyCollection<int>>()))
+                .Returns<IReadOnlyCollection<int>>(ids => ids.ToDictionary(id => id, id => new List<ResolvedEpisodeVersion>
+                {
+                    new ResolvedEpisodeVersion { EpisodeId = id, SeriesId = _xemSeries.Id, SeriesVersionId = seriesVersionId, ParentQualityProfileId = _xemSeries.QualityProfileId }
+                }));
+        }
+
+        [TestCase(SeriesTypes.Standard)]
+        [TestCase(SeriesTypes.Daily)]
+        [TestCase(SeriesTypes.Anime)]
+        public async Task season_search_preserves_version_for_every_indexer_request(SeriesTypes seriesType)
+        {
+            _xemSeries.SeriesType = seriesType;
+            WithEpisode(1, 1, null, null);
+            WithEpisode(1, 2, null, null);
+            _xemEpisodes[0].Id = 101;
+            _xemEpisodes[1].Id = 102;
+            GivenVersion(17);
+            var criteria = WatchForSearchCriteria();
+
+            await Subject.SeasonSearch(_xemSeries.Id, 1, _xemEpisodes, true, true, false, 17);
+
+            criteria.Should().NotBeEmpty();
+            criteria.Should().OnlyContain(c => c.SeriesVersionId == 17);
+        }
+
+        [Test]
+        public async Task special_episode_search_preserves_version_for_fallback_requests()
+        {
+            _xemSeries.SeriesType = SeriesTypes.Standard;
+            WithEpisode(0, 1, null, null);
+            var episode = _xemEpisodes.Single();
+            GivenVersion(17);
+            Mocker.GetMock<IEpisodeService>().Setup(s => s.GetEpisode(episode.Id)).Returns(episode);
+            var criteria = WatchForSearchCriteria();
+
+            await Subject.EpisodeSearch(episode.Id, true, false, 17);
+
+            criteria.Should().HaveCountGreaterThan(1);
+            criteria.Should().OnlyContain(c => c.SeriesVersionId == 17);
+        }
+
+        [Test]
+        public void rejects_a_version_from_another_series_before_querying_indexers()
+        {
+            WithEpisode(1, 1, null, null);
+            var episode = _xemEpisodes.Single();
+            Mocker.GetMock<IEpisodeService>().Setup(s => s.GetEpisode(episode.Id)).Returns(episode);
+            GivenVersion(18);
+            var criteria = WatchForSearchCriteria();
+
+            Assert.ThrowsAsync<NzbDrone.Core.Exceptions.SearchFailedException>(async () => await Subject.EpisodeSearch(episode.Id, true, false, 17));
+            criteria.Should().BeEmpty();
+        }
+
         [Test]
         public async Task Tags_IndexerTags_SeriesNoTags_IndexerNotIncluded()
         {

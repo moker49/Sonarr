@@ -53,6 +53,11 @@ namespace NzbDrone.Core.Tv
             return string.Format("[{0}]{1}", Id, Title.NullSafe());
         }
 
+        public Episode CloneForVersion()
+        {
+            return (Episode)MemberwiseClone();
+        }
+
         public int CompareTo(object obj)
         {
             var other = (Episode)obj;

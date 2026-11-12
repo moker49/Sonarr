@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Common.EnsureThat;
@@ -12,6 +13,7 @@ using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Profiles.Qualities;
 
 namespace NzbDrone.Core.Download
 {
@@ -29,6 +31,7 @@ namespace NzbDrone.Core.Download
         private readonly IRateLimitService _rateLimitService;
         private readonly IEventAggregator _eventAggregator;
         private readonly ISeedConfigProvider _seedConfigProvider;
+        private readonly ICompositeProfilePolicy _compositePolicy;
         private readonly Logger _logger;
 
         public DownloadService(IProvideDownloadClient downloadClientProvider,
@@ -38,6 +41,7 @@ namespace NzbDrone.Core.Download
                                IRateLimitService rateLimitService,
                                IEventAggregator eventAggregator,
                                ISeedConfigProvider seedConfigProvider,
+                               ICompositeProfilePolicy compositePolicy,
                                Logger logger)
         {
             _downloadClientProvider = downloadClientProvider;
@@ -47,11 +51,22 @@ namespace NzbDrone.Core.Download
             _rateLimitService = rateLimitService;
             _eventAggregator = eventAggregator;
             _seedConfigProvider = seedConfigProvider;
+            _compositePolicy = compositePolicy;
             _logger = logger;
         }
 
         public async Task DownloadReport(RemoteEpisode remoteEpisode, int? downloadClientId)
         {
+            if (remoteEpisode?.SeriesVersionId.HasValue == true)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.Conflict, "Version-aware download processing is not yet available.");
+            }
+
+            if (remoteEpisode?.Series != null)
+            {
+                _compositePolicy.EnsureAssignable(new[] { remoteEpisode.Series.QualityProfileId });
+            }
+
             var filterBlockedClients = remoteEpisode.Release.PendingReleaseReason == PendingReleaseReason.DownloadClientUnavailable;
 
             var tags = remoteEpisode.Series?.Tags;

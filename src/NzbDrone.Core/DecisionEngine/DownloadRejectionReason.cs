@@ -9,6 +9,7 @@ public enum DownloadRejectionReason
     UnableToParse,
     Error,
     DecisionError,
+    VersionedDownloadsNotReady,
     MinimumAgeDelay,
     SeriesNotMonitored,
     EpisodeNotMonitored,

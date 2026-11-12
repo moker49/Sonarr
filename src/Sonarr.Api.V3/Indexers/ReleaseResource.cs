@@ -42,6 +42,7 @@ namespace Sonarr.Api.V3.Indexers
         public int[] MappedEpisodeNumbers { get; set; }
         public int[] MappedAbsoluteEpisodeNumbers { get; set; }
         public int? MappedSeriesId { get; set; }
+        public int? SeriesVersionId { get; set; }
         public IEnumerable<ReleaseEpisodeResource> MappedEpisodeInfo { get; set; }
         public bool Approved { get; set; }
         public bool TemporarilyRejected { get; set; }
@@ -128,6 +129,7 @@ namespace Sonarr.Api.V3.Indexers
                 EpisodeNumbers = parsedEpisodeInfo.EpisodeNumbers,
                 AbsoluteEpisodeNumbers = parsedEpisodeInfo.AbsoluteEpisodeNumbers,
                 MappedSeriesId = remoteEpisode.Series?.Id,
+                SeriesVersionId = remoteEpisode.SeriesVersionId,
                 MappedSeasonNumber = remoteEpisode.Episodes.FirstOrDefault()?.SeasonNumber,
                 MappedEpisodeNumbers = remoteEpisode.Episodes.Select(v => v.EpisodeNumber).ToArray(),
                 MappedAbsoluteEpisodeNumbers = remoteEpisode.Episodes.Where(v => v.AbsoluteEpisodeNumber.HasValue).Select(v => v.AbsoluteEpisodeNumber.Value).ToArray(),

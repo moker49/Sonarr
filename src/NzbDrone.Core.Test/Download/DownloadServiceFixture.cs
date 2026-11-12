@@ -12,6 +12,7 @@ using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.Test.Framework;
 using NzbDrone.Core.Tv;
 
@@ -48,10 +49,29 @@ namespace NzbDrone.Core.Test.Download
                 .Build();
 
             _parseResult = Builder<RemoteEpisode>.CreateNew()
+                   .With(c => c.SeriesVersionId = null)
                    .With(c => c.Series = Builder<Series>.CreateNew().Build())
                    .With(c => c.Release = releaseInfo)
                    .With(c => c.Episodes = episodes)
                    .Build();
+        }
+
+        [Test]
+        public void should_reject_explicit_version_before_contacting_a_download_client()
+        {
+            _parseResult.SeriesVersionId = 7;
+
+            Assert.ThrowsAsync<NzbDroneClientException>(async () => await Subject.DownloadReport(_parseResult, null));
+            Mocker.GetMock<IProvideDownloadClient>().Verify(c => c.GetDownloadClient(It.IsAny<DownloadProtocol>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<HashSet<int>>()), Times.Never());
+        }
+
+        [Test]
+        public void should_reject_composite_parent_before_contacting_a_download_client()
+        {
+            Mocker.GetMock<ICompositeProfilePolicy>().Setup(p => p.EnsureAssignable(It.IsAny<IEnumerable<int>>())).Throws(new NzbDroneClientException(HttpStatusCode.Conflict, "Composite draft"));
+
+            Assert.ThrowsAsync<NzbDroneClientException>(async () => await Subject.DownloadReport(_parseResult, null));
+            Mocker.GetMock<IProvideDownloadClient>().Verify(c => c.GetDownloadClient(It.IsAny<DownloadProtocol>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<HashSet<int>>()), Times.Never());
         }
 
         private Mock<IDownloadClient> WithUsenetClient()

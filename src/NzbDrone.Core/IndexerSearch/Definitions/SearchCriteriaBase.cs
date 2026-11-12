@@ -15,6 +15,7 @@ namespace NzbDrone.Core.IndexerSearch.Definitions
         private static readonly Regex BeginningThe = new Regex(@"^the\s", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         public Series Series { get; set; }
+        public int? SeriesVersionId { get; set; }
         public List<string> SceneTitles { get; set; }
         public List<Episode> Episodes { get; set; }
         public SearchMode SearchMode { get; set; }

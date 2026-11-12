@@ -10,6 +10,7 @@ using NzbDrone.Core.DecisionEngine.Specifications;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.Test.Framework;
 using NzbDrone.Core.Tv;
 using NzbDrone.Test.Common;
@@ -35,6 +36,7 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
         [SetUp]
         public void Setup()
         {
+            Mocker.GetMock<ICompositeProfileDraftService>().Setup(c => c.GetProfileIds()).Returns(new HashSet<int>());
             _pass1 = new Mock<IDownloadDecisionEngineSpecification>();
             _pass2 = new Mock<IDownloadDecisionEngineSpecification>();
             _pass3 = new Mock<IDownloadDecisionEngineSpecification>();
@@ -86,6 +88,50 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             _pass1.Verify(c => c.IsSatisfiedBy(_remoteEpisode, null), Times.Once());
             _pass2.Verify(c => c.IsSatisfiedBy(_remoteEpisode, null), Times.Once());
             _pass3.Verify(c => c.IsSatisfiedBy(_remoteEpisode, null), Times.Once());
+        }
+
+        [Test]
+        public void evaluates_requested_version_context_but_blocks_dispatch_until_ready()
+        {
+            var criteria = new SingleEpisodeSearchCriteria { Series = _remoteEpisode.Series, SeriesVersionId = 7 };
+            var context = new RemoteEpisode { Series = _remoteEpisode.Series, Episodes = _remoteEpisode.Episodes, Release = _reports[0], SeriesVersionId = 7 };
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(c => c.ForVersion(_remoteEpisode, 7)).Returns(context);
+            _pass1.Setup(c => c.IsSatisfiedBy(context, criteria)).Returns(DownloadSpecDecision.Accept);
+            GivenSpecifications(_pass1);
+
+            var decision = Subject.GetSearchDecision(_reports, criteria).Single();
+
+            decision.RemoteEpisode.Should().BeSameAs(context);
+            decision.Approved.Should().BeFalse();
+            decision.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.VersionedDownloadsNotReady);
+            _pass1.Verify(c => c.IsSatisfiedBy(context, criteria), Times.Once());
+        }
+
+        [Test]
+        public void ordinary_search_does_not_create_a_version_context()
+        {
+            var criteria = new SingleEpisodeSearchCriteria { Series = _remoteEpisode.Series };
+            _pass1.Setup(c => c.IsSatisfiedBy(_remoteEpisode, criteria)).Returns(DownloadSpecDecision.Accept);
+            GivenSpecifications(_pass1);
+
+            var decision = Subject.GetSearchDecision(_reports, criteria).Single();
+
+            decision.Approved.Should().BeTrue();
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Verify(c => c.ForVersion(It.IsAny<RemoteEpisode>(), It.IsAny<int>()), Times.Never());
+        }
+
+        [Test]
+        public void rss_rejects_composite_series_until_versioned_dispatch_is_ready()
+        {
+            _remoteEpisode.Series.QualityProfileId = 10;
+            Mocker.GetMock<ICompositeProfileDraftService>().Setup(c => c.GetProfileIds()).Returns(new HashSet<int> { 10 });
+            GivenSpecifications(_pass1);
+
+            var decision = Subject.GetRssDecision(_reports).Single();
+
+            decision.Approved.Should().BeFalse();
+            decision.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.VersionedDownloadsNotReady);
+            _pass1.Verify(c => c.IsSatisfiedBy(It.IsAny<RemoteEpisode>(), It.IsAny<SearchCriteriaBase>()), Times.Never());
         }
 
         [Test]
