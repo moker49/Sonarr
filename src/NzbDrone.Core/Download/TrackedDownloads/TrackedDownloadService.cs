@@ -128,9 +128,13 @@ namespace NzbDrone.Core.Download.TrackedDownloads
                 HasNotifiedManualInteractionRequired = existingItem?.HasNotifiedManualInteractionRequired ?? false
             };
 
+            RestoreReservation(trackedDownload);
+
             try
             {
                 var historyItems = _historyService.FindByDownloadId(downloadItem.DownloadId)
+                    .Where(h => h.SeriesVersionId == trackedDownload.SeriesVersionId)
+                    .Where(h => HistoryBelongsToClient(h, downloadClient.Id, trackedDownload.SeriesVersionId.HasValue))
                     .OrderByDescending(h => h.Date)
                     .ToList();
 
@@ -141,7 +145,7 @@ namespace NzbDrone.Core.Download.TrackedDownloads
                     trackedDownload.RemoteEpisode = _parsingService.Map(parsedEpisodeInfo, 0, 0, null);
                 }
 
-                var downloadHistory = _downloadHistoryService.GetLatestDownloadHistoryItem(downloadItem.DownloadId);
+                var downloadHistory = _downloadHistoryService.GetLatestDownloadHistoryItem(downloadItem.DownloadId, downloadClient.Id, trackedDownload.SeriesVersionId);
 
                 if (downloadHistory != null)
                 {
@@ -225,6 +229,18 @@ namespace NzbDrone.Core.Download.TrackedDownloads
 
             _cache.Set(trackedDownload.DownloadItem.DownloadId, trackedDownload);
             return trackedDownload;
+        }
+
+        private static bool HistoryBelongsToClient(EpisodeHistory history, int clientId, bool isVersioned)
+        {
+            if (history.Data != null && history.Data.TryGetValue(EpisodeHistory.DOWNLOAD_CLIENT_ID, out var value))
+            {
+                return int.TryParse(value, out var recordedClientId) && recordedClientId == clientId;
+            }
+
+            // Pre-existing ordinary history did not record a client ID. Managed
+            // history must prove its client before it can supply episode identity.
+            return !isVersioned;
         }
 
         private void RestoreReservation(TrackedDownload tracked)

@@ -92,7 +92,7 @@ namespace NzbDrone.Core.Test.DecisionEngineTests.RssSync
 
         private void GivenMostRecentForEpisode(int episodeId, string downloadId, Tuple<QualityModel, Language> quality, DateTime date, EpisodeHistoryEventType eventType)
         {
-            Mocker.GetMock<IHistoryService>().Setup(s => s.MostRecentForEpisode(episodeId))
+            Mocker.GetMock<IHistoryService>().Setup(s => s.MostRecentForOrdinaryEpisode(episodeId))
                   .Returns(new EpisodeHistory { DownloadId = downloadId, Quality = quality.Item1, Date = date, EventType = eventType, Languages = new List<Language> { quality.Item2 } });
         }
 
@@ -104,7 +104,7 @@ namespace NzbDrone.Core.Test.DecisionEngineTests.RssSync
 
             _upgradeHistory.IsSatisfiedBy(_parseResultSingle, null).Accepted.Should().BeTrue();
             Mocker.GetMock<IHistoryService>().Verify(h => h.MostRecentForEpisodeVersion(FIRST_EPISODE_ID, 17), Times.Once());
-            Mocker.GetMock<IHistoryService>().Verify(h => h.MostRecentForEpisode(FIRST_EPISODE_ID), Times.Never());
+            Mocker.GetMock<IHistoryService>().Verify(h => h.MostRecentForOrdinaryEpisode(FIRST_EPISODE_ID), Times.Never());
         }
 
         private void GivenCdhDisabled()

@@ -4,6 +4,7 @@ using FluentAssertions;
 using Moq;
 using NUnit.Framework;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.History;
 using NzbDrone.Core.Indexers;
@@ -20,6 +21,58 @@ namespace NzbDrone.Core.Test.Download.TrackedDownloads
     [TestFixture]
     public class TrackedDownloadServiceFixture : CoreTest<TrackedDownloadService>
     {
+        [Test]
+        public void restores_version_before_looking_up_download_history()
+        {
+            var client = new DownloadClientDefinition { Id = 7, Protocol = DownloadProtocol.Usenet };
+            var item = new DownloadClientItem { DownloadId = "job", Title = "Unmatched", DownloadClientInfo = new DownloadClientItemClientInfo { Name = "client" } };
+            Mocker.GetMock<IHistoryService>().Setup(s => s.FindByDownloadId("job")).Returns(new List<EpisodeHistory>());
+            Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.FindByClientDownload(7, "job"))
+                .Returns(new EpisodeDownloadReservation { Id = 12, SeriesVersionId = 34 });
+
+            Subject.TrackDownload(client, item);
+
+            Mocker.GetMock<IDownloadHistoryService>().Verify(s => s.GetLatestDownloadHistoryItem("job", 7, 34), Times.Once());
+        }
+
+        [Test]
+        public void does_not_restore_sibling_episode_history_for_a_reserved_version()
+        {
+            var client = new DownloadClientDefinition { Id = 7, Protocol = DownloadProtocol.Usenet };
+            var item = new DownloadClientItem { DownloadId = "job", Title = "Unmatched", DownloadClientInfo = new DownloadClientItemClientInfo { Name = "client" } };
+            Mocker.GetMock<IHistoryService>().Setup(s => s.FindByDownloadId("job")).Returns(new List<EpisodeHistory>
+            {
+                new EpisodeHistory { SeriesVersionId = 35, EventType = EpisodeHistoryEventType.Grabbed, SourceTitle = "TV Series S01", SeriesId = 5, EpisodeId = 4 }
+            });
+            Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.FindByClientDownload(7, "job"))
+                .Returns(new EpisodeDownloadReservation { Id = 12, SeriesVersionId = 34 });
+
+            var tracked = Subject.TrackDownload(client, item);
+
+            tracked.RemoteEpisode.Should().BeNull();
+            Mocker.GetMock<IParsingService>().Verify(s => s.Map(It.IsAny<ParsedEpisodeInfo>(), It.IsAny<int>(), It.IsAny<IEnumerable<int>>()), Times.Never());
+        }
+
+        [TestCase("8")]
+        [TestCase(null)]
+        public void managed_episode_history_requires_the_correct_client(string recordedClient)
+        {
+            var client = new DownloadClientDefinition { Id = 7, Protocol = DownloadProtocol.Usenet };
+            var item = new DownloadClientItem { DownloadId = "job", Title = "Unmatched", DownloadClientInfo = new DownloadClientItemClientInfo { Name = "client" } };
+            var history = new EpisodeHistory { SeriesVersionId = 34, EventType = EpisodeHistoryEventType.Grabbed, SourceTitle = "TV Series S01", SeriesId = 5, EpisodeId = 4 };
+            if (recordedClient != null)
+            {
+                history.Data.Add(EpisodeHistory.DOWNLOAD_CLIENT_ID, recordedClient);
+            }
+            Mocker.GetMock<IHistoryService>().Setup(s => s.FindByDownloadId("job")).Returns(new List<EpisodeHistory> { history });
+            Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.FindByClientDownload(7, "job"))
+                .Returns(new EpisodeDownloadReservation { Id = 12, SeriesVersionId = 34 });
+
+            var tracked = Subject.TrackDownload(client, item);
+
+            tracked.RemoteEpisode.Should().BeNull();
+        }
+
         [Test]
         public void restores_reservation_and_blocks_legacy_imported_state()
         {

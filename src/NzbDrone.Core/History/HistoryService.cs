@@ -18,6 +18,7 @@ namespace NzbDrone.Core.History
     {
         PagingSpec<EpisodeHistory> Paged(PagingSpec<EpisodeHistory> pagingSpec, int[] languages, int[] qualities);
         EpisodeHistory MostRecentForEpisode(int episodeId);
+        EpisodeHistory MostRecentForOrdinaryEpisode(int episodeId);
         EpisodeHistory MostRecentForEpisodeVersion(int episodeId, int seriesVersionId);
         List<EpisodeHistory> FindByEpisodeId(int episodeId);
         EpisodeHistory MostRecentForDownloadId(string downloadId);
@@ -61,6 +62,11 @@ namespace NzbDrone.Core.History
         public EpisodeHistory MostRecentForEpisodeVersion(int episodeId, int seriesVersionId)
         {
             return _historyRepository.MostRecentForEpisodeVersion(episodeId, seriesVersionId);
+        }
+
+        public EpisodeHistory MostRecentForOrdinaryEpisode(int episodeId)
+        {
+            return _historyRepository.MostRecentForOrdinaryEpisode(episodeId);
         }
 
         public List<EpisodeHistory> FindByEpisodeId(int episodeId)
@@ -166,6 +172,7 @@ namespace NzbDrone.Core.History
                 history.Data.Add("AgeMinutes", message.Episode.Release.AgeMinutes.ToString());
                 history.Data.Add("PublishedDate", message.Episode.Release.PublishDate.ToString("s") + "Z");
                 history.Data.Add("DownloadClient", message.DownloadClient);
+                history.Data.Add(EpisodeHistory.DOWNLOAD_CLIENT_ID, message.DownloadClientId.ToString());
                 history.Data.Add("DownloadClientName", message.DownloadClientName);
                 history.Data.Add("Size", message.Episode.Release.Size.ToString());
                 history.Data.Add("DownloadUrl", message.Episode.Release.DownloadUrl);
@@ -227,6 +234,10 @@ namespace NzbDrone.Core.History
                 history.Data.Add("DroppedPath", message.EpisodeInfo.Path);
                 history.Data.Add("ImportedPath", Path.Combine(message.EpisodeInfo.Series.Path, message.ImportedEpisode.RelativePath));
                 history.Data.Add("DownloadClient", message.DownloadClientInfo?.Type);
+                if (message.DownloadClientInfo != null)
+                {
+                    history.Data.Add(EpisodeHistory.DOWNLOAD_CLIENT_ID, message.DownloadClientInfo.Id.ToString());
+                }
                 history.Data.Add("DownloadClientName", message.DownloadClientInfo?.Name);
                 history.Data.Add("ReleaseGroup", message.EpisodeInfo.ReleaseGroup);
                 history.Data.Add("CustomFormatScore", message.EpisodeInfo.CustomFormatScore.ToString());
@@ -256,6 +267,10 @@ namespace NzbDrone.Core.History
                 };
 
                 history.Data.Add("DownloadClient", message.DownloadClient);
+                if (message.TrackedDownload != null)
+                {
+                    history.Data.Add(EpisodeHistory.DOWNLOAD_CLIENT_ID, message.TrackedDownload.DownloadClient.ToString());
+                }
                 history.Data.Add("DownloadClientName", message.TrackedDownload?.DownloadItem.DownloadClientInfo.Name);
                 history.Data.Add("Message", message.Message);
                 history.Data.Add("ReleaseGroup", message.TrackedDownload?.RemoteEpisode?.ParsedEpisodeInfo?.ReleaseGroup);
@@ -354,6 +369,7 @@ namespace NzbDrone.Core.History
                 };
 
                 history.Data.Add("DownloadClient", message.DownloadClientInfo.Type);
+                history.Data.Add(EpisodeHistory.DOWNLOAD_CLIENT_ID, message.DownloadClientInfo.Id.ToString());
                 history.Data.Add("DownloadClientName", message.DownloadClientInfo.Name);
                 history.Data.Add("Message", message.Message);
                 history.Data.Add("ReleaseGroup", message.TrackedDownload?.RemoteEpisode?.ParsedEpisodeInfo?.ReleaseGroup);

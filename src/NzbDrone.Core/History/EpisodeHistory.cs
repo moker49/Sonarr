@@ -10,6 +10,7 @@ namespace NzbDrone.Core.History
     public class EpisodeHistory : ModelBase
     {
         public const string DOWNLOAD_CLIENT = "downloadClient";
+        public const string DOWNLOAD_CLIENT_ID = "DownloadClientId";
         public const string SERIES_MATCH_TYPE = "seriesMatchType";
         public const string RELEASE_SOURCE = "releaseSource";
 

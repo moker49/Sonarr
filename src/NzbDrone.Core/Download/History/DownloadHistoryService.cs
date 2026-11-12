@@ -13,6 +13,7 @@ namespace NzbDrone.Core.Download.History
     {
         bool DownloadAlreadyImported(string downloadId);
         DownloadHistory GetLatestDownloadHistoryItem(string downloadId);
+        DownloadHistory GetLatestDownloadHistoryItem(string downloadId, int downloadClientId, int? seriesVersionId);
         DownloadHistory GetLatestGrab(string downloadId);
     }
 
@@ -57,8 +58,26 @@ namespace NzbDrone.Core.Download.History
 
         public DownloadHistory GetLatestDownloadHistoryItem(string downloadId)
         {
-            var events = _repository.FindByDownloadId(downloadId);
+            return LatestStateEvent(_repository.FindByDownloadId(downloadId));
+        }
 
+        public DownloadHistory GetLatestDownloadHistoryItem(string downloadId, int downloadClientId, int? seriesVersionId)
+        {
+            var events = _repository.FindByDownloadId(downloadId);
+            var scoped = events.Where(e => e.DownloadClientId == downloadClientId && e.SeriesVersionId == seriesVersionId).ToList();
+
+            // Older ordinary history can lack a client ID. Use it only if no
+            // client-specific history exists for this download ID.
+            if (!seriesVersionId.HasValue && !scoped.Any() && events.All(e => e.DownloadClientId == 0))
+            {
+                scoped = events.Where(e => e.SeriesVersionId == null).ToList();
+            }
+
+            return LatestStateEvent(scoped);
+        }
+
+        private static DownloadHistory LatestStateEvent(System.Collections.Generic.IEnumerable<DownloadHistory> events)
+        {
             // Events are ordered by date descending. We'll return the most recent expected event.
             foreach (var e in events)
             {

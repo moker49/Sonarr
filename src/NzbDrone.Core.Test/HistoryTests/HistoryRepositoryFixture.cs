@@ -59,6 +59,17 @@ namespace NzbDrone.Core.Test.HistoryTests
         }
 
         [Test]
+        public void ordinary_history_ignores_newer_version_records()
+        {
+            var ordinary = Builder<EpisodeHistory>.CreateNew().With(h => h.EpisodeId = 1).With(h => h.SeriesVersionId = null).With(h => h.Date = DateTime.UtcNow.AddMinutes(-2)).With(h => h.Quality = new QualityModel()).With(h => h.Languages = new List<Language> { Language.English }).BuildNew();
+            var versioned = Builder<EpisodeHistory>.CreateNew().With(h => h.EpisodeId = 1).With(h => h.SeriesVersionId = 10).With(h => h.Date = DateTime.UtcNow).With(h => h.Quality = new QualityModel()).With(h => h.Languages = new List<Language> { Language.English }).BuildNew();
+            Subject.Insert(ordinary);
+            Subject.Insert(versioned);
+
+            Subject.MostRecentForOrdinaryEpisode(1).Id.Should().Be(ordinary.Id);
+        }
+
+        [Test]
         public void should_get_download_history()
         {
             var historyBluray = Builder<EpisodeHistory>.CreateNew()

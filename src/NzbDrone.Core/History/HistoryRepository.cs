@@ -11,6 +11,7 @@ namespace NzbDrone.Core.History
     public interface IHistoryRepository : IBasicRepository<EpisodeHistory>
     {
         EpisodeHistory MostRecentForEpisode(int episodeId);
+        EpisodeHistory MostRecentForOrdinaryEpisode(int episodeId);
         EpisodeHistory MostRecentForEpisodeVersion(int episodeId, int seriesVersionId);
         List<EpisodeHistory> FindByEpisodeId(int episodeId);
         EpisodeHistory MostRecentForDownloadId(string downloadId);
@@ -38,6 +39,11 @@ namespace NzbDrone.Core.History
         public EpisodeHistory MostRecentForEpisodeVersion(int episodeId, int seriesVersionId)
         {
             return Query(h => h.EpisodeId == episodeId && h.SeriesVersionId == seriesVersionId).MaxBy(h => h.Date);
+        }
+
+        public EpisodeHistory MostRecentForOrdinaryEpisode(int episodeId)
+        {
+            return Query(h => h.EpisodeId == episodeId && h.SeriesVersionId == null).MaxBy(h => h.Date);
         }
 
         public List<EpisodeHistory> FindByEpisodeId(int episodeId)
