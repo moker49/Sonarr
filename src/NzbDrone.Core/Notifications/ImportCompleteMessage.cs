@@ -21,6 +21,8 @@ namespace NzbDrone.Core.Notifications
         public string DestinationPath { get; set; }
         public string ReleaseGroup { get; set; }
         public QualityModel ReleaseQuality { get; set; }
+        public int? VersionReservationId { get; set; }
+        public int? NotificationDeliveryId { get; set; }
 
         public override string ToString()
         {

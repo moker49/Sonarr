@@ -72,5 +72,24 @@ namespace NzbDrone.Core.Test.MediaFiles
             using var connection = Mocker.Resolve<IMainDatabase>().OpenConnection();
             connection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionImportCompletions\" WHERE \"PublishedAt\" IS NOT NULL").Should().Be(1);
         }
+
+        [Test]
+        public void retry_queue_defers_recent_attempts_and_excludes_published_completions()
+        {
+            var queue = Mocker.Resolve<EpisodeVersionNotificationQueue>();
+            var pending = queue.GetDue().Should().ContainSingle().Which;
+            pending.OwnerId.Should().Be(_importId);
+            pending.Kind.Should().Be(EpisodeVersionCompletionKind.Import);
+
+            queue.RecordAttempt(pending);
+            queue.GetDue().Should().BeEmpty();
+            using (var connection = Mocker.Resolve<IMainDatabase>().OpenConnection())
+            {
+                connection.Execute("UPDATE \"EpisodeVersionImportCompletions\" SET \"LastAttemptAt\" = @old", new { old = DateTime.UtcNow.AddMinutes(-6) });
+            }
+            queue.GetDue().Should().ContainSingle();
+            Subject.Capture(EpisodeVersionCompletionKind.Import, _seriesId, _importId, Array.Empty<int>());
+            queue.GetDue().Should().BeEmpty();
+        }
     }
 }

@@ -76,6 +76,12 @@ namespace NzbDrone.Core.Jobs
                     new ScheduledTask
                     {
                         Interval = 5,
+                        TypeName = typeof(RetryEpisodeVersionNotificationsCommand).FullName
+                    },
+
+                    new ScheduledTask
+                    {
+                        Interval = 5,
                         TypeName = typeof(MessagingCleanupCommand).FullName
                     },
 
