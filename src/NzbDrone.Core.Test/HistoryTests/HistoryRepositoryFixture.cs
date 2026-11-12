@@ -47,6 +47,20 @@ namespace NzbDrone.Core.Test.HistoryTests
         }
 
         [Test]
+        public void download_client_id_key_survives_database_serialization()
+        {
+            var history = Builder<EpisodeHistory>.CreateNew()
+                .With(c => c.Languages = new List<Language> { Language.English })
+                .With(c => c.Quality = new QualityModel())
+                .BuildNew();
+            history.Data.Add(EpisodeHistory.DOWNLOAD_CLIENT_ID, "7");
+
+            Subject.Insert(history);
+
+            StoredModel.Data.Should().ContainKey(EpisodeHistory.DOWNLOAD_CLIENT_ID).WhoseValue.Should().Be("7");
+        }
+
+        [Test]
         public void most_recent_version_history_ignores_newer_sibling_records()
         {
             var older = Builder<EpisodeHistory>.CreateNew().With(h => h.EpisodeId = 1).With(h => h.SeriesVersionId = 10).With(h => h.Date = DateTime.UtcNow.AddMinutes(-2)).With(h => h.Quality = new QualityModel()).With(h => h.Languages = new List<Language> { Language.English }).BuildNew();

@@ -14,6 +14,7 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Core.CustomFormats;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.MediaInfo;
+using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.Qualities;
 using NzbDrone.Core.Tv;
 
@@ -23,6 +24,7 @@ namespace NzbDrone.Core.Organizer
     {
         string BuildFileName(List<Episode> episodes, Series series, EpisodeFile episodeFile, string extension = "", NamingConfig namingConfig = null, List<CustomFormat> customFormats = null);
         string BuildFilePath(List<Episode> episodes, Series series, EpisodeFile episodeFile, string extension, NamingConfig namingConfig = null, List<CustomFormat> customFormats = null);
+        string BuildVersionFilePath(List<Episode> episodes, Series series, EpisodeFile episodeFile, string extension, string versionLabel, NamingConfig namingConfig = null, List<CustomFormat> customFormats = null);
         string BuildSeasonPath(Series series, int seasonNumber);
         string GetSeriesFolder(Series series, NamingConfig namingConfig = null);
         string GetSeasonFolder(Series series, int seasonNumber, NamingConfig namingConfig = null);
@@ -237,6 +239,27 @@ namespace NzbDrone.Core.Organizer
             var fileName = BuildFileName(episodes, series, episodeFile, extension, remainingPathLength, namingConfig, customFormats);
 
             return Path.Combine(seasonPath, fileName);
+        }
+
+        public string BuildVersionFilePath(List<Episode> episodes, Series series, EpisodeFile episodeFile, string extension, string versionLabel, NamingConfig namingConfig = null, List<CustomFormat> customFormats = null)
+        {
+            if (!CompositeProfileValidator.ValidLabel(versionLabel) || string.IsNullOrWhiteSpace(extension) || extension[0] != '.' || extension.IndexOfAny(new[] { '/', '\\' }) >= 0)
+            {
+                throw new ArgumentException("A filename-safe version label and file extension are required.");
+            }
+
+            var seasonPath = BuildSeasonPath(series, episodes.First().SeasonNumber);
+            var remainingPathLength = LongPathSupport.MaxFilePathLength - seasonPath.GetByteCount() - 1;
+            var suffix = " - " + versionLabel + extension;
+            var fileName = BuildFileName(episodes, series, episodeFile, suffix, remainingPathLength, namingConfig, customFormats);
+            var path = Path.Combine(seasonPath, fileName);
+
+            if (path.GetByteCount() > LongPathSupport.MaxFilePathLength || Path.GetFileName(path).GetByteCount() > LongPathSupport.MaxFileNameLength)
+            {
+                throw new InvalidOperationException("The versioned episode filename exceeds the supported path length.");
+            }
+
+            return path;
         }
 
         public string BuildSeasonPath(Series series, int seasonNumber)

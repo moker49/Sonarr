@@ -1,9 +1,15 @@
+using System;
+using System.IO;
 using System.Linq;
 using FizzWare.NBuilder;
 using FluentAssertions;
+using Moq;
 using NUnit.Framework;
+using NzbDrone.Common.Disk;
+using NzbDrone.Common.Extensions;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Organizer;
+using NzbDrone.Core.Qualities;
 using NzbDrone.Core.Test.Framework;
 using NzbDrone.Core.Tv;
 using NzbDrone.Test.Common;
@@ -23,6 +29,46 @@ namespace NzbDrone.Core.Test.OrganizerTests
 
             Mocker.GetMock<INamingConfigService>()
                   .Setup(c => c.GetConfig()).Returns(_namingConfig);
+        }
+
+        [Test]
+        public void version_paths_keep_episode_naming_and_distinguish_sibling_versions()
+        {
+            var episodes = Builder<Episode>.CreateListOfSize(1).All().With(e => e.Title = "Episode Title").With(e => e.SeasonNumber = 1).With(e => e.EpisodeNumber = 5).Build().ToList();
+            var series = Builder<Series>.CreateNew().With(s => s.Title = "30 Rock").With(s => s.Path = @"C:\Test\30 Rock".AsOsAgnostic()).With(s => s.SeasonFolder = false).With(s => s.SeriesType = SeriesTypes.Standard).Build();
+            var file = Builder<EpisodeFile>.CreateNew().With(f => f.SceneName = "30 Rock - S01E05 - Episode Title").Build();
+
+            var first = Subject.BuildVersionFilePath(episodes, series, file, ".mkv", "HD");
+            var second = Subject.BuildVersionFilePath(episodes, series, file, ".mkv", "4K");
+
+            first.Should().Be(@"C:\Test\30 Rock\30 Rock - S01E05 - Episode Title - HD.mkv".AsOsAgnostic());
+            second.Should().Be(@"C:\Test\30 Rock\30 Rock - S01E05 - Episode Title - 4K.mkv".AsOsAgnostic());
+        }
+
+        [TestCase("../escape")]
+        [TestCase(" label ")]
+        [TestCase("")]
+        public void version_path_rejects_unsafe_labels(string label)
+        {
+            Action build = () => Subject.BuildVersionFilePath(new System.Collections.Generic.List<Episode>(), new Series(), new EpisodeFile(), ".mkv", label);
+            build.Should().Throw<ArgumentException>();
+        }
+
+        [Test]
+        public void version_suffix_reserves_space_when_truncating_episode_titles()
+        {
+            _namingConfig.RenameEpisodes = true;
+            _namingConfig.StandardEpisodeFormat = "{Series Title} - S{season:00}E{episode:00} - {Episode Title}";
+            var episodes = Builder<Episode>.CreateListOfSize(1).All().With(e => e.Title = new string('a', 240)).With(e => e.SeasonNumber = 1).With(e => e.EpisodeNumber = 5).Build().ToList();
+            var series = Builder<Series>.CreateNew().With(s => s.Title = "Show").With(s => s.Path = @"C:\Test\Show".AsOsAgnostic()).With(s => s.SeasonFolder = false).With(s => s.SeriesType = SeriesTypes.Standard).Build();
+            var file = new EpisodeFile { Quality = new QualityModel(Quality.HDTV720p) };
+            Mocker.GetMock<IQualityDefinitionService>().Setup(s => s.Get(It.IsAny<Quality>()))
+                .Returns<Quality>(quality => Quality.DefaultQualityDefinitions.First(d => d.Quality == quality));
+
+            var path = Subject.BuildVersionFilePath(episodes, series, file, ".mkv", "Ultra HD");
+
+            Path.GetFileName(path).GetByteCount().Should().BeLessOrEqualTo(LongPathSupport.MaxFileNameLength);
+            path.Should().EndWith(" - Ultra HD.mkv");
         }
 
         [Test]

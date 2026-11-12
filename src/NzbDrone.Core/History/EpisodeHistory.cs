@@ -10,7 +10,8 @@ namespace NzbDrone.Core.History
     public class EpisodeHistory : ModelBase
     {
         public const string DOWNLOAD_CLIENT = "downloadClient";
-        public const string DOWNLOAD_CLIENT_ID = "DownloadClientId";
+        // Embedded history dictionaries are persisted with camel-cased keys.
+        public const string DOWNLOAD_CLIENT_ID = "downloadClientId";
         public const string SERIES_MATCH_TYPE = "seriesMatchType";
         public const string RELEASE_SOURCE = "releaseSource";
 
