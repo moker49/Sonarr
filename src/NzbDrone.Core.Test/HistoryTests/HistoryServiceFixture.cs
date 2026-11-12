@@ -51,6 +51,7 @@ namespace NzbDrone.Core.Test.HistoryTests
             var localEpisode = new LocalEpisode
                                {
                                    Series = series,
+                                   SeriesVersionId = 44,
                                    Episodes = episodes,
                                    Path = @"C:\Test\Unsorted\Series.s01e01.mkv"
                                };
@@ -69,7 +70,7 @@ namespace NzbDrone.Core.Test.HistoryTests
             Subject.Handle(new EpisodeImportedEvent(localEpisode, episodeFile, new List<DeletedEpisodeFile>(), true, downloadClientItem));
 
             Mocker.GetMock<IHistoryRepository>()
-                .Verify(v => v.Insert(It.Is<EpisodeHistory>(h => h.SourceTitle == Path.GetFileNameWithoutExtension(localEpisode.Path))));
+                .Verify(v => v.Insert(It.Is<EpisodeHistory>(h => h.SourceTitle == Path.GetFileNameWithoutExtension(localEpisode.Path) && h.SeriesVersionId == 44)));
         }
     }
 }

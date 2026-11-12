@@ -15,6 +15,7 @@ namespace Sonarr.Api.V3.History
     {
         public int EpisodeId { get; set; }
         public int SeriesId { get; set; }
+        public int? SeriesVersionId { get; set; }
         public string SourceTitle { get; set; }
         public List<Language> Languages { get; set; }
         public QualityModel Quality { get; set; }
@@ -50,6 +51,7 @@ namespace Sonarr.Api.V3.History
 
                 EpisodeId = model.EpisodeId,
                 SeriesId = model.SeriesId,
+                SeriesVersionId = model.SeriesVersionId,
                 SourceTitle = model.SourceTitle,
                 Languages = model.Languages,
                 Quality = model.Quality,

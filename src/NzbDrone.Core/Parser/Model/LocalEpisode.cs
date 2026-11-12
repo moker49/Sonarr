@@ -27,6 +27,7 @@ namespace NzbDrone.Core.Parser.Model
         public DownloadClientItem DownloadItem { get; set; }
         public ParsedEpisodeInfo FolderEpisodeInfo { get; set; }
         public Series Series { get; set; }
+        public int? SeriesVersionId { get; set; }
         public List<Episode> Episodes { get; set; }
         public List<DeletedEpisodeFile> OldFiles { get; set; }
         public QualityModel Quality { get; set; }

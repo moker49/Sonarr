@@ -46,6 +46,7 @@ namespace NzbDrone.Core.Download.Pending
         private readonly ITaskManager _taskManager;
         private readonly IConfigService _configService;
         private readonly ICustomFormatCalculationService _formatCalculator;
+        private readonly IEpisodeVersionDecisionContext _versionContexts;
         private readonly IRemoteEpisodeAggregationService _aggregationService;
         private readonly IDownloadClientFactory _downloadClientFactory;
         private readonly IIndexerFactory _indexerFactory;
@@ -60,6 +61,7 @@ namespace NzbDrone.Core.Download.Pending
                                     ITaskManager taskManager,
                                     IConfigService configService,
                                     ICustomFormatCalculationService formatCalculator,
+                                    IEpisodeVersionDecisionContext versionContexts,
                                     IRemoteEpisodeAggregationService aggregationService,
                                     IDownloadClientFactory downloadClientFactory,
                                     IIndexerFactory indexerFactory,
@@ -74,6 +76,7 @@ namespace NzbDrone.Core.Download.Pending
             _taskManager = taskManager;
             _configService = configService;
             _formatCalculator = formatCalculator;
+            _versionContexts = versionContexts;
             _aggregationService = aggregationService;
             _downloadClientFactory = downloadClientFactory;
             _indexerFactory = indexerFactory;
@@ -103,10 +106,14 @@ namespace NzbDrone.Core.Download.Pending
 
                     var episodeIds = decision.RemoteEpisode.Episodes.Select(e => e.Id);
 
+                    // A release whose episodes cannot be restored may still be the
+                    // same pending download. Keep it until its identity is known.
                     var existingReports = episodeIds.SelectMany(v => alreadyPendingByEpisode[v])
+                                                    .Concat(alreadyPending.Where(r => r.RemoteEpisode.Episodes.Empty()))
                                                     .Distinct().ToList();
 
-                    var matchingReports = existingReports.Where(MatchingReleasePredicate(decision.RemoteEpisode.Release)).ToList();
+                    var matchingReports = existingReports.Where(r => EpisodeVersionScope.MayOverlap(r.SeriesVersionId, decision.RemoteEpisode.SeriesVersionId))
+                        .Where(MatchingReleasePredicate(decision.RemoteEpisode.Release)).ToList();
 
                     if (matchingReports.Any())
                     {
@@ -153,7 +160,9 @@ namespace NzbDrone.Core.Download.Pending
 
         public List<ReleaseInfo> GetPending()
         {
-            var releases = _repository.All().Select(p =>
+            // Versioned pending candidates remain stored until their decision,
+            // history, and dispatch paths are fully version-aware.
+            var releases = _repository.All().Where(p => !p.SeriesVersionId.HasValue).Select(p =>
             {
                 var release = p.Release;
 
@@ -189,7 +198,9 @@ namespace NzbDrone.Core.Download.Pending
                 {
                     var noEpisodeItem = GetQueueItem(pendingRelease, nextRssSync, null);
 
-                    noEpisodeItem.ErrorMessage = "Unable to find matching episode(s)";
+                    noEpisodeItem.ErrorMessage = pendingRelease.SeriesVersionId.HasValue
+                        ? "Unable to resolve the pending release's version and episodes."
+                        : "Unable to find matching episode(s)";
 
                     queued.Add(noEpisodeItem);
 
@@ -203,7 +214,7 @@ namespace NzbDrone.Core.Download.Pending
             }
 
             // Return best quality release for each episode
-            var deduped = queued.Where(q => q.Episode != null).GroupBy(q => q.Episode.Id).Select(g =>
+            var deduped = queued.Where(q => q.Episode != null).GroupBy(q => (q.Episode.Id, q.SeriesVersionId)).Select(g =>
             {
                 var series = g.First().Series;
 
@@ -212,7 +223,7 @@ namespace NzbDrone.Core.Download.Pending
                         .First();
             });
 
-            return deduped.ToList();
+            return deduped.Concat(queued.Where(q => q.Episode == null)).ToList();
         }
 
         public Queue.Queue FindPendingQueueItem(int queueId)
@@ -226,7 +237,8 @@ namespace NzbDrone.Core.Download.Pending
             var seriesReleases = _repository.AllBySeriesId(targetItem.SeriesId);
 
             var releasesToRemove = seriesReleases.Where(
-                c => c.ParsedEpisodeInfo.SeasonNumber == targetItem.ParsedEpisodeInfo.SeasonNumber &&
+                c => c.SeriesVersionId == targetItem.SeriesVersionId &&
+                     c.ParsedEpisodeInfo.SeasonNumber == targetItem.ParsedEpisodeInfo.SeasonNumber &&
                      c.ParsedEpisodeInfo.EpisodeNumbers.SequenceEqual(targetItem.ParsedEpisodeInfo.EpisodeNumbers));
 
             _repository.DeleteMany(releasesToRemove.Select(c => c.Id));
@@ -273,7 +285,7 @@ namespace NzbDrone.Core.Download.Pending
 
             if (knownRemoteEpisodes != null)
             {
-                foreach (var series in knownRemoteEpisodes.Values.Select(v => v.Series))
+                foreach (var series in knownRemoteEpisodes.Values.Where(v => !v.SeriesVersionId.HasValue).Select(v => v.Series))
                 {
                     seriesMap.TryAdd(series.Id, series);
                 }
@@ -303,13 +315,14 @@ namespace NzbDrone.Core.Download.Pending
                 release.RemoteEpisode = new RemoteEpisode
                 {
                     Series = series,
+                    SeriesVersionId = release.SeriesVersionId,
                     SeriesMatchType = release.AdditionalInfo?.SeriesMatchType ?? SeriesMatchType.Unknown,
                     ReleaseSource = release.AdditionalInfo?.ReleaseSource ?? ReleaseSourceType.Unknown,
                     ParsedEpisodeInfo = release.ParsedEpisodeInfo,
                     Release = release.Release
                 };
 
-                if (knownRemoteEpisodes != null && knownRemoteEpisodes.TryGetValue(release.Release.Title, out var knownRemoteEpisode))
+                if (knownRemoteEpisodes != null && knownRemoteEpisodes.TryGetValue(release.Release.Title, out var knownRemoteEpisode) && knownRemoteEpisode.SeriesVersionId == release.SeriesVersionId)
                 {
                     release.RemoteEpisode.MappedSeasonNumber = knownRemoteEpisode.MappedSeasonNumber;
                     release.RemoteEpisode.Episodes = knownRemoteEpisode.Episodes;
@@ -335,6 +348,21 @@ namespace NzbDrone.Core.Download.Pending
                 {
                     release.RemoteEpisode.MappedSeasonNumber = release.ParsedEpisodeInfo.SeasonNumber;
                     release.RemoteEpisode.Episodes = new List<Episode>();
+                }
+
+                if (release.SeriesVersionId.HasValue && release.RemoteEpisode.Episodes.Any())
+                {
+                    try
+                    {
+                        var versionedEpisode = _versionContexts.ForVersion(release.RemoteEpisode, release.SeriesVersionId.Value)
+                            ?? throw new InvalidOperationException("The pending release's version could not be restored.");
+                        release.RemoteEpisode = versionedEpisode;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug(ex, "Unable to restore the pending release's version");
+                        release.RemoteEpisode.Episodes = new List<Episode>();
+                    }
                 }
 
                 _aggregationService.Augment(release.RemoteEpisode);
@@ -381,6 +409,7 @@ namespace NzbDrone.Core.Download.Pending
                 Id = GetQueueId(pendingRelease, episode),
                 Series = pendingRelease.RemoteEpisode.Series,
                 Episode = episode,
+                SeriesVersionId = pendingRelease.SeriesVersionId,
                 Languages = pendingRelease.RemoteEpisode.Languages,
                 Quality = pendingRelease.RemoteEpisode.ParsedEpisodeInfo.Quality,
                 Title = pendingRelease.Title,
@@ -404,6 +433,7 @@ namespace NzbDrone.Core.Download.Pending
             _repository.Insert(new PendingRelease
             {
                 SeriesId = decision.RemoteEpisode.Series.Id,
+                SeriesVersionId = decision.RemoteEpisode.SeriesVersionId,
                 ParsedEpisodeInfo = decision.RemoteEpisode.ParsedEpisodeInfo,
                 Release = decision.RemoteEpisode.Release,
                 Title = decision.RemoteEpisode.Release.Title,
@@ -439,7 +469,7 @@ namespace NzbDrone.Core.Download.Pending
             var pendingReleases = GetPendingReleases(remoteEpisode.Series.Id);
             var episodeIds = remoteEpisode.Episodes.Select(e => e.Id);
 
-            var existingReports = pendingReleases.Where(r => r.RemoteEpisode.Episodes.Select(e => e.Id)
+            var existingReports = pendingReleases.Where(r => r.SeriesVersionId == remoteEpisode.SeriesVersionId && r.RemoteEpisode.Episodes.Select(e => e.Id)
                                                              .Intersect(episodeIds)
                                                              .Any())
                                                              .ToList();
@@ -473,7 +503,14 @@ namespace NzbDrone.Core.Download.Pending
 
             foreach (var rejectedRelease in rejected)
             {
-                var matching = pending.Where(MatchingReleasePredicate(rejectedRelease.RemoteEpisode.Release));
+                var rejectedSeriesId = rejectedRelease.RemoteEpisode.Series?.Id;
+                if (!rejectedSeriesId.HasValue)
+                {
+                    continue;
+                }
+
+                var matching = pending.Where(p => p.SeriesId == rejectedSeriesId.Value && p.SeriesVersionId == rejectedRelease.RemoteEpisode.SeriesVersionId)
+                    .Where(MatchingReleasePredicate(rejectedRelease.RemoteEpisode.Release));
 
                 foreach (var pendingRelease in matching)
                 {
@@ -485,7 +522,8 @@ namespace NzbDrone.Core.Download.Pending
 
         private PendingRelease FindPendingRelease(int queueId)
         {
-            return GetPendingReleases().First(p => p.RemoteEpisode.Episodes.Any(e => queueId == GetQueueId(p, e)));
+            return GetPendingReleases().First(p => p.RemoteEpisode.Episodes.Any(e => queueId == GetQueueId(p, e)) ||
+                (!p.RemoteEpisode.Episodes.Any() && queueId == GetQueueId(p, null)));
         }
 
         private int GetQueueId(PendingRelease pendingRelease, Episode episode)

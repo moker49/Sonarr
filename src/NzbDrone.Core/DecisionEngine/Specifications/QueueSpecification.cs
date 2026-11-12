@@ -7,6 +7,7 @@ using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
 using NzbDrone.Core.Queue;
+using NzbDrone.Core.Tv;
 
 namespace NzbDrone.Core.DecisionEngine.Specifications
 {
@@ -39,6 +40,7 @@ namespace NzbDrone.Core.DecisionEngine.Specifications
             var queue = _queueService.GetQueue();
             var matchingEpisode = queue.Where(q => q.RemoteEpisode?.Series != null &&
                                                    q.RemoteEpisode.Series.Id == subject.Series.Id &&
+                                                   VersionsMayOverlap(subject.SeriesVersionId, q) &&
                                                    q.RemoteEpisode.Episodes.Select(e => e.Id).Intersect(subject.Episodes.Select(e => e.Id)).Any())
                                        .ToList();
 
@@ -111,6 +113,18 @@ namespace NzbDrone.Core.DecisionEngine.Specifications
             }
 
             return DownloadSpecDecision.Accept();
+        }
+
+        private static bool VersionsMayOverlap(int? requestedVersion, Queue.Queue queued)
+        {
+            var queueVersion = queued.SeriesVersionId;
+            var remoteVersion = queued.RemoteEpisode?.SeriesVersionId;
+            if (queueVersion.HasValue && remoteVersion.HasValue && queueVersion != remoteVersion)
+            {
+                return true;
+            }
+
+            return EpisodeVersionScope.MayOverlap(requestedVersion, queueVersion ?? remoteVersion);
         }
     }
 }

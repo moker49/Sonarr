@@ -66,5 +66,14 @@ namespace NzbDrone.Core.Test.QueueTests
 
             distinct.Should().HaveCount(3);
         }
+
+        [Test]
+        public void queue_items_retain_the_tracked_version_for_each_episode()
+        {
+            _trackedDownloads[0].SeriesVersionId = 17;
+            Subject.Handle(new TrackedDownloadRefreshedEvent(_trackedDownloads));
+
+            Subject.GetQueue().Should().HaveCount(3).And.OnlyContain(q => q.SeriesVersionId == 17);
+        }
     }
 }

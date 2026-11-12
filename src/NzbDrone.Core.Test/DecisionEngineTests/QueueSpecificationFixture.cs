@@ -150,6 +150,45 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
         }
 
         [Test]
+        public void sibling_version_in_queue_does_not_block_the_requested_version()
+        {
+            _series.QualityProfile.Value.Cutoff = Quality.Bluray1080p.Id;
+            _remoteEpisode.SeriesVersionId = 1;
+            var sibling = new RemoteEpisode
+            {
+                Series = _series,
+                SeriesVersionId = 2,
+                Episodes = new List<Episode> { _episode },
+                ParsedEpisodeInfo = new ParsedEpisodeInfo { Quality = new QualityModel(Quality.DVD) },
+                Release = _releaseInfo
+            };
+            GivenQueue(new[] { sibling });
+
+            Subject.IsSatisfiedBy(_remoteEpisode, null).Accepted.Should().BeTrue();
+        }
+
+        [Test]
+        public void unknown_or_conflicting_queue_version_remains_conservatively_blocking()
+        {
+            _series.QualityProfile.Value.Cutoff = Quality.Bluray1080p.Id;
+            _remoteEpisode.SeriesVersionId = 1;
+            var queued = new RemoteEpisode
+            {
+                Series = _series,
+                Episodes = new List<Episode> { _episode },
+                ParsedEpisodeInfo = new ParsedEpisodeInfo { Quality = new QualityModel(Quality.DVD) },
+                Release = _releaseInfo
+            };
+            var row = new Queue.Queue { RemoteEpisode = queued, TrackedDownloadState = TrackedDownloadState.Downloading };
+            Mocker.GetMock<IQueueService>().Setup(s => s.GetQueue()).Returns(new List<Queue.Queue> { row });
+            Subject.IsSatisfiedBy(_remoteEpisode, null).Accepted.Should().BeFalse();
+
+            row.SeriesVersionId = 2;
+            queued.SeriesVersionId = 3;
+            Subject.IsSatisfiedBy(_remoteEpisode, null).Accepted.Should().BeFalse();
+        }
+
+        [Test]
         public void should_return_true_when_quality_in_queue_is_lower()
         {
             _series.QualityProfile.Value.Cutoff = Quality.Bluray1080p.Id;

@@ -90,7 +90,7 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
                   .Returns((List<DownloadDecision> d) => d);
         }
 
-        private void GivenHeldRelease(string title, string indexer, DateTime publishDate)
+        private PendingRelease GivenHeldRelease(string title, string indexer, DateTime publishDate)
         {
             var release = _release.JsonClone();
             release.Indexer = indexer;
@@ -99,6 +99,7 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
             var heldReleases = Builder<PendingRelease>.CreateListOfSize(1)
                                                    .All()
                                                    .With(h => h.SeriesId = _series.Id)
+                                                   .With(h => h.SeriesVersionId = null)
                                                    .With(h => h.Title = title)
                                                    .With(h => h.Release = release)
                                                    .With(h => h.ParsedEpisodeInfo = new ParsedEpisodeInfo())
@@ -107,6 +108,22 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
             Mocker.GetMock<IPendingReleaseRepository>()
                   .Setup(s => s.All())
                   .Returns(heldReleases);
+
+            return heldReleases[0];
+        }
+
+        [Test]
+        public void rejecting_one_version_does_not_remove_a_sibling_pending_release()
+        {
+            var held = GivenHeldRelease(_release.Title, _release.Indexer, _release.PublishDate);
+            held.SeriesVersionId = 1;
+            _remoteEpisode.SeriesVersionId = 2;
+
+            Subject.Handle(new RssSyncCompleteEvent(new ProcessedDecisions(new List<DownloadDecision>(),
+                                                                           new List<DownloadDecision>(),
+                                                                           new List<DownloadDecision> { _temporarilyRejected })));
+
+            VerifyNoDelete();
         }
 
         [Test]

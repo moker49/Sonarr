@@ -104,6 +104,7 @@ namespace NzbDrone.Core.Download.History
             {
                 EventType = DownloadHistoryEventType.DownloadGrabbed,
                 SeriesId = message.Episode.Series.Id,
+                SeriesVersionId = message.Episode.SeriesVersionId,
                 DownloadId = message.DownloadId,
                 SourceTitle = message.Episode.Release.Title,
                 Date = DateTime.UtcNow,
@@ -147,6 +148,7 @@ namespace NzbDrone.Core.Download.History
             {
                 EventType = DownloadHistoryEventType.FileImported,
                 SeriesId = message.ImportedEpisode.SeriesId,
+                SeriesVersionId = message.EpisodeInfo.SeriesVersionId,
                 DownloadId = downloadId,
                 SourceTitle = message.EpisodeInfo.Path,
                 Date = DateTime.UtcNow,
@@ -170,6 +172,7 @@ namespace NzbDrone.Core.Download.History
             {
                 EventType = DownloadHistoryEventType.DownloadImported,
                 SeriesId = message.SeriesId,
+                SeriesVersionId = message.TrackedDownload.SeriesVersionId,
                 DownloadId = downloadItem.DownloadId,
                 SourceTitle = downloadItem.Title,
                 Date = DateTime.UtcNow,
@@ -195,6 +198,7 @@ namespace NzbDrone.Core.Download.History
             {
                 EventType = DownloadHistoryEventType.DownloadFailed,
                 SeriesId = message.SeriesId,
+                SeriesVersionId = message.TrackedDownload.SeriesVersionId,
                 DownloadId = message.DownloadId,
                 SourceTitle = message.SourceTitle,
                 Date = DateTime.UtcNow,
@@ -214,6 +218,7 @@ namespace NzbDrone.Core.Download.History
             {
                 EventType = DownloadHistoryEventType.DownloadIgnored,
                 SeriesId = message.SeriesId,
+                SeriesVersionId = message.TrackedDownload?.SeriesVersionId,
                 DownloadId = message.DownloadId,
                 SourceTitle = message.SourceTitle,
                 Date = DateTime.UtcNow,

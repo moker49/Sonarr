@@ -18,6 +18,7 @@ namespace NzbDrone.Core.History
     {
         PagingSpec<EpisodeHistory> Paged(PagingSpec<EpisodeHistory> pagingSpec, int[] languages, int[] qualities);
         EpisodeHistory MostRecentForEpisode(int episodeId);
+        EpisodeHistory MostRecentForEpisodeVersion(int episodeId, int seriesVersionId);
         List<EpisodeHistory> FindByEpisodeId(int episodeId);
         EpisodeHistory MostRecentForDownloadId(string downloadId);
         EpisodeHistory Get(int historyId);
@@ -55,6 +56,11 @@ namespace NzbDrone.Core.History
         public EpisodeHistory MostRecentForEpisode(int episodeId)
         {
             return _historyRepository.MostRecentForEpisode(episodeId);
+        }
+
+        public EpisodeHistory MostRecentForEpisodeVersion(int episodeId, int seriesVersionId)
+        {
+            return _historyRepository.MostRecentForEpisodeVersion(episodeId, seriesVersionId);
         }
 
         public List<EpisodeHistory> FindByEpisodeId(int episodeId)
@@ -100,7 +106,7 @@ namespace NzbDrone.Core.History
             var allHistory = _historyRepository.FindDownloadHistory(trackedDownload.EpisodeInfo.Series.Id, trackedDownload.ImportedEpisode.Quality);
 
             // Find download related items for these episodes
-            var episodesHistory = allHistory.Where(h => episodeIds.Contains(h.EpisodeId)).ToList();
+            var episodesHistory = allHistory.Where(h => episodeIds.Contains(h.EpisodeId) && h.SeriesVersionId == trackedDownload.EpisodeInfo.SeriesVersionId).ToList();
 
             var processedDownloadId = episodesHistory
                 .Where(c => c.EventType != EpisodeHistoryEventType.Grabbed && c.DownloadId != null)
@@ -146,6 +152,7 @@ namespace NzbDrone.Core.History
                     Quality = message.Episode.ParsedEpisodeInfo.Quality,
                     SourceTitle = message.Episode.Release.Title,
                     SeriesId = episode.SeriesId,
+                    SeriesVersionId = message.Episode.SeriesVersionId,
                     EpisodeId = episode.Id,
                     DownloadId = message.DownloadId,
                     Languages = message.Episode.Languages,
@@ -210,6 +217,7 @@ namespace NzbDrone.Core.History
                     Quality = message.EpisodeInfo.Quality,
                     SourceTitle = message.ImportedEpisode.SceneName ?? Path.GetFileNameWithoutExtension(message.EpisodeInfo.Path),
                     SeriesId = message.ImportedEpisode.SeriesId,
+                    SeriesVersionId = message.EpisodeInfo.SeriesVersionId,
                     EpisodeId = episode.Id,
                     DownloadId = downloadId,
                     Languages = message.EpisodeInfo.Languages
@@ -241,6 +249,7 @@ namespace NzbDrone.Core.History
                     Quality = message.Quality,
                     SourceTitle = message.SourceTitle,
                     SeriesId = message.SeriesId,
+                    SeriesVersionId = message.TrackedDownload?.SeriesVersionId,
                     EpisodeId = episodeId,
                     DownloadId = message.DownloadId,
                     Languages = message.Languages
@@ -338,6 +347,7 @@ namespace NzbDrone.Core.History
                     Quality = message.Quality,
                     SourceTitle = message.SourceTitle,
                     SeriesId = message.SeriesId,
+                    SeriesVersionId = message.TrackedDownload?.SeriesVersionId,
                     EpisodeId = episodeId,
                     DownloadId = message.DownloadId,
                     Languages = message.Languages

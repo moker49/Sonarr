@@ -17,6 +17,7 @@ namespace Sonarr.Api.V3.Queue
     {
         public int? SeriesId { get; set; }
         public int? EpisodeId { get; set; }
+        public int? SeriesVersionId { get; set; }
         public int? SeasonNumber { get; set; }
         public SeriesResource Series { get; set; }
         public EpisodeResource Episode { get; set; }
@@ -70,6 +71,7 @@ namespace Sonarr.Api.V3.Queue
                 Id = model.Id,
                 SeriesId = model.Series?.Id,
                 EpisodeId = model.Episode?.Id,
+                SeriesVersionId = model.SeriesVersionId,
                 SeasonNumber = model.Episode?.SeasonNumber,
                 Series = includeSeries && model.Series != null ? model.Series.ToResource() : null,
                 Episode = includeEpisode && model.Episode != null ? model.Episode.ToResource() : null,

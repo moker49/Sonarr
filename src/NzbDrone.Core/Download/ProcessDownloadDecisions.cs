@@ -8,6 +8,7 @@ using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.Pending;
 using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Indexers;
+using NzbDrone.Core.Tv;
 
 namespace NzbDrone.Core.Download
 {
@@ -168,7 +169,8 @@ namespace NzbDrone.Core.Download
         {
             var episodeIds = report.RemoteEpisode.Episodes.Select(e => e.Id).ToList();
 
-            return decisions.SelectMany(r => r.RemoteEpisode.Episodes)
+            return decisions.Where(r => EpisodeVersionScope.MayOverlap(r.RemoteEpisode.SeriesVersionId, report.RemoteEpisode.SeriesVersionId))
+                            .SelectMany(r => r.RemoteEpisode.Episodes)
                             .Select(e => e.Id)
                             .ToList()
                             .Intersect(episodeIds)

@@ -105,6 +105,7 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
             var heldReleases = Builder<PendingRelease>.CreateListOfSize(1)
                                                    .All()
                                                    .With(h => h.SeriesId = _series.Id)
+                                                   .With(h => h.SeriesVersionId = null)
                                                    .With(h => h.Release = _release.JsonClone())
                                                    .With(h => h.ParsedEpisodeInfo = parsedEpisodeInfo)
                                                    .Build();
@@ -120,6 +121,18 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
             Subject.Handle(new EpisodeGrabbedEvent(_remoteEpisode));
 
             VerifyDelete();
+        }
+
+        [Test]
+        public void grabbing_one_version_does_not_remove_a_sibling_pending_release()
+        {
+            GivenHeldRelease(_parsedEpisodeInfo.Quality);
+            _heldReleases[0].SeriesVersionId = 1;
+            _remoteEpisode.SeriesVersionId = 2;
+
+            Subject.Handle(new EpisodeGrabbedEvent(_remoteEpisode));
+
+            VerifyNoDelete();
         }
 
         [Test]

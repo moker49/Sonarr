@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FizzWare.NBuilder;
+using FluentAssertions;
 using Moq;
 using NUnit.Framework;
 using NzbDrone.Common.Extensions;
@@ -101,6 +102,7 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
             var heldReleases = Builder<PendingRelease>.CreateListOfSize(1)
                                                    .All()
                                                    .With(h => h.SeriesId = _series.Id)
+                                                   .With(h => h.SeriesVersionId = null)
                                                    .With(h => h.Title = title)
                                                    .With(h => h.Release = release)
                                                    .With(h => h.Reason = reason)
@@ -126,6 +128,64 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
             Subject.Add(_temporarilyRejected, PendingReleaseReason.Delay);
 
             VerifyNoInsert();
+        }
+
+        [Test]
+        public void sibling_versions_keep_separate_pending_copies()
+        {
+            _series.SeriesType = SeriesTypes.Standard;
+            _parsedEpisodeInfo.AirDate = null;
+            GivenHeldRelease(_release.Title, _release.Indexer, _release.PublishDate);
+            _heldReleases[0].SeriesVersionId = 1;
+            _remoteEpisode.SeriesVersionId = 2;
+            Mocker.GetMock<IParsingService>().Setup(s => s.Map(It.IsAny<ParsedEpisodeInfo>(), It.IsAny<Series>()))
+                .Returns(new RemoteEpisode { Series = _series, Episodes = new List<Episode> { _episode } });
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(s => s.ForVersion(It.IsAny<RemoteEpisode>(), 1))
+                .Returns<RemoteEpisode, int>((remote, version) => remote);
+
+            Subject.Add(_temporarilyRejected, PendingReleaseReason.Delay);
+
+            Mocker.GetMock<IPendingReleaseRepository>().Verify(v => v.Insert(It.Is<PendingRelease>(p => p.SeriesVersionId == 2)), Times.Once());
+        }
+
+        [Test]
+        public void unresolved_version_is_preserved_without_episode_matches()
+        {
+            _series.SeriesType = SeriesTypes.Standard;
+            _parsedEpisodeInfo.AirDate = null;
+            GivenHeldRelease(_release.Title, _release.Indexer, _release.PublishDate);
+            _heldReleases[0].SeriesVersionId = 1;
+            Mocker.GetMock<IParsingService>().Setup(s => s.Map(It.IsAny<ParsedEpisodeInfo>(), It.IsAny<Series>()))
+                .Returns(new RemoteEpisode { Series = _series, Episodes = new List<Episode> { _episode } });
+
+            Subject.GetPendingRemoteEpisodes(_series.Id).Single().Episodes.Should().BeEmpty();
+            Mocker.GetMock<IPendingReleaseRepository>().Verify(v => v.Delete(It.IsAny<PendingRelease>()), Times.Never());
+        }
+
+        [Test]
+        public void unresolved_version_does_not_create_a_duplicate_pending_release()
+        {
+            _series.SeriesType = SeriesTypes.Standard;
+            _parsedEpisodeInfo.AirDate = null;
+            GivenHeldRelease(_release.Title, _release.Indexer, _release.PublishDate);
+            _heldReleases[0].SeriesVersionId = 1;
+            _remoteEpisode.SeriesVersionId = 1;
+            Mocker.GetMock<IParsingService>().Setup(s => s.Map(It.IsAny<ParsedEpisodeInfo>(), It.IsAny<Series>()))
+                .Returns(new RemoteEpisode { Series = _series, Episodes = new List<Episode> { _episode } });
+
+            Subject.Add(_temporarilyRejected, PendingReleaseReason.Delay);
+
+            VerifyNoInsert();
+        }
+
+        [Test]
+        public void versioned_pending_is_not_reprocessed_while_dispatch_is_disabled()
+        {
+            GivenHeldRelease(_release.Title, _release.Indexer, _release.PublishDate);
+            _heldReleases[0].SeriesVersionId = 1;
+
+            Subject.GetPending().Should().BeEmpty();
+            Mocker.GetMock<IPendingReleaseRepository>().Verify(v => v.Delete(It.IsAny<int>()), Times.Never());
         }
 
         [Test]

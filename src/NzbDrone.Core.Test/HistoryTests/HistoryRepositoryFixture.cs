@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System;
 using System.Linq;
 using FizzWare.NBuilder;
 using FluentAssertions;
@@ -43,6 +44,18 @@ namespace NzbDrone.Core.Test.HistoryTests
             Subject.Insert(history);
 
             StoredModel.Data.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void most_recent_version_history_ignores_newer_sibling_records()
+        {
+            var older = Builder<EpisodeHistory>.CreateNew().With(h => h.EpisodeId = 1).With(h => h.SeriesVersionId = 10).With(h => h.Date = DateTime.UtcNow.AddMinutes(-2)).With(h => h.Quality = new QualityModel()).With(h => h.Languages = new List<Language> { Language.English }).BuildNew();
+            var sibling = Builder<EpisodeHistory>.CreateNew().With(h => h.EpisodeId = 1).With(h => h.SeriesVersionId = 11).With(h => h.Date = DateTime.UtcNow).With(h => h.Quality = new QualityModel()).With(h => h.Languages = new List<Language> { Language.English }).BuildNew();
+            Subject.Insert(older);
+            Subject.Insert(sibling);
+
+            Subject.MostRecentForEpisodeVersion(1, 10).Id.Should().Be(older.Id);
+            Subject.MostRecentForEpisodeVersion(1, 12).Should().BeNull();
         }
 
         [Test]

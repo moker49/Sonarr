@@ -96,6 +96,17 @@ namespace NzbDrone.Core.Test.DecisionEngineTests.RssSync
                   .Returns(new EpisodeHistory { DownloadId = downloadId, Quality = quality.Item1, Date = date, EventType = eventType, Languages = new List<Language> { quality.Item2 } });
         }
 
+        [Test]
+        public void versioned_release_checks_only_its_own_episode_history()
+        {
+            _parseResultSingle.SeriesVersionId = 17;
+            GivenMostRecentForEpisode(FIRST_EPISODE_ID, "sibling", _notupgradableQuality, DateTime.UtcNow, EpisodeHistoryEventType.Grabbed);
+
+            _upgradeHistory.IsSatisfiedBy(_parseResultSingle, null).Accepted.Should().BeTrue();
+            Mocker.GetMock<IHistoryService>().Verify(h => h.MostRecentForEpisodeVersion(FIRST_EPISODE_ID, 17), Times.Once());
+            Mocker.GetMock<IHistoryService>().Verify(h => h.MostRecentForEpisode(FIRST_EPISODE_ID), Times.Never());
+        }
+
         private void GivenCdhDisabled()
         {
             Mocker.GetMock<IConfigService>()

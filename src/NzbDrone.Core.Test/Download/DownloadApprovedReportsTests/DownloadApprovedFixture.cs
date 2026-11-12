@@ -106,6 +106,31 @@ namespace NzbDrone.Core.Test.Download.DownloadApprovedReportsTests
         }
 
         [Test]
+        public async Task overlapping_episodes_in_distinct_versions_are_processed_independently()
+        {
+            var first = GetRemoteEpisode(new List<Episode> { GetEpisode(1), GetEpisode(2) }, new QualityModel(Quality.HDTV720p));
+            var second = GetRemoteEpisode(new List<Episode> { GetEpisode(2) }, new QualityModel(Quality.HDTV720p));
+            first.SeriesVersionId = 11;
+            second.SeriesVersionId = 12;
+
+            var result = await Subject.ProcessDecisions(new List<DownloadDecision> { new DownloadDecision(first), new DownloadDecision(second) });
+
+            result.Grabbed.Should().HaveCount(2);
+        }
+
+        [Test]
+        public async Task unknown_version_conservatively_blocks_an_overlapping_episode()
+        {
+            var first = GetRemoteEpisode(new List<Episode> { GetEpisode(1) }, new QualityModel(Quality.HDTV720p));
+            var second = GetRemoteEpisode(new List<Episode> { GetEpisode(1) }, new QualityModel(Quality.HDTV720p));
+            second.SeriesVersionId = 12;
+
+            var result = await Subject.ProcessDecisions(new List<DownloadDecision> { new DownloadDecision(first), new DownloadDecision(second) });
+
+            result.Grabbed.Should().ContainSingle();
+        }
+
+        [Test]
         public async Task should_return_downloaded_reports()
         {
             var episodes = new List<Episode> { GetEpisode(1) };
