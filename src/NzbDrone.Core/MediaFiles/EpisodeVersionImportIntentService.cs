@@ -19,6 +19,7 @@ namespace NzbDrone.Core.MediaFiles
         int Prepare(int reservationId, int clientId, string downloadId, IReadOnlyCollection<int> episodeIds, string sourcePath, string destinationPath);
         List<EpisodeVersionImportIntent> GetPrepared(int seriesId);
         List<EpisodeVersionImportIntent> GetActive(int seriesId);
+        List<int> GetEpisodeIds(int importId);
         void CancelPrepared(int importId);
         void BeginMove(int importId, bool copyOnly);
         void ConfirmMoved(int importId);
@@ -124,6 +125,12 @@ namespace NzbDrone.Core.MediaFiles
         {
             using var connection = _database.OpenConnection();
             return connection.Query<EpisodeVersionImportIntent>("SELECT * FROM \"EpisodeVersionImportIntents\" WHERE \"SeriesId\" = @seriesId AND \"State\" IN @states ORDER BY \"Id\"", new { seriesId, states = new[] { (int)EpisodeVersionImportIntentState.Prepared, (int)EpisodeVersionImportIntentState.Moving, (int)EpisodeVersionImportIntentState.Moved, (int)EpisodeVersionImportIntentState.Uncertain } }).ToList();
+        }
+
+        public List<int> GetEpisodeIds(int importId)
+        {
+            using var connection = _database.OpenConnection();
+            return connection.Query<int>("SELECT \"EpisodeId\" FROM \"EpisodeVersionImportEpisodeLocks\" WHERE \"ImportId\" = @importId ORDER BY \"EpisodeId\"", new { importId }).ToList();
         }
 
         public void BeginMove(int importId, bool copyOnly)
