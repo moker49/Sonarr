@@ -67,6 +67,17 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeFileMovingServiceTests
         }
 
         [Test]
+        public void refuses_to_rename_a_version_owned_file_directly()
+        {
+            Mocker.GetMock<IVersionEpisodeFileAssignmentService>().Setup(s => s.IsOwnedFile(_episodeFile.Id)).Returns(true);
+
+            Assert.Throws<InvalidOperationException>(() => Subject.MoveEpisodeFile(_episodeFile, _series));
+
+            Mocker.GetMock<IEpisodeService>().Verify(s => s.GetEpisodesByFileId(It.IsAny<int>()), Times.Never());
+            Mocker.GetMock<IDiskTransferService>().VerifyNoOtherCalls();
+        }
+
+        [Test]
         public void should_catch_UnauthorizedAccessException_during_folder_inheritance()
         {
             WindowsOnly();

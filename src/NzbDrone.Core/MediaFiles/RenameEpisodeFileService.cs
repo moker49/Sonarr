@@ -32,6 +32,7 @@ namespace NzbDrone.Core.MediaFiles
         private readonly IEpisodeService _episodeService;
         private readonly IBuildFileNames _filenameBuilder;
         private readonly IDiskProvider _diskProvider;
+        private readonly IVersionEpisodeFileAssignmentService _versionFiles;
         private readonly Logger _logger;
 
         public RenameEpisodeFileService(ISeriesService seriesService,
@@ -41,6 +42,7 @@ namespace NzbDrone.Core.MediaFiles
                                         IEpisodeService episodeService,
                                         IBuildFileNames filenameBuilder,
                                         IDiskProvider diskProvider,
+                                        IVersionEpisodeFileAssignmentService versionFiles,
                                         Logger logger)
         {
             _seriesService = seriesService;
@@ -50,6 +52,7 @@ namespace NzbDrone.Core.MediaFiles
             _episodeService = episodeService;
             _filenameBuilder = filenameBuilder;
             _diskProvider = diskProvider;
+            _versionFiles = versionFiles;
             _logger = logger;
         }
 
@@ -77,9 +80,15 @@ namespace NzbDrone.Core.MediaFiles
 
         private IEnumerable<RenameEpisodeFilePreview> GetPreviews(Series series, List<Episode> episodes, List<EpisodeFile> files)
         {
+            var versionFileIds = _versionFiles.GetOwnedFileIds(series.Id);
             foreach (var f in files)
             {
                 var file = f;
+                if (versionFileIds.Contains(file.Id))
+                {
+                    continue;
+                }
+
                 var episodesInFile = episodes.Where(e => e.EpisodeFileId == file.Id).ToList();
                 var episodeFilePath = Path.Combine(series.Path, file.RelativePath);
 
@@ -113,6 +122,12 @@ namespace NzbDrone.Core.MediaFiles
 
             foreach (var episodeFile in episodeFiles)
             {
+                if (_versionFiles.IsOwnedFile(episodeFile.Id))
+                {
+                    _logger.Warn("Skipping version-owned episode file {0}; version-aware renaming is not yet available", episodeFile.Id);
+                    continue;
+                }
+
                 var previousRelativePath = episodeFile.RelativePath;
                 var previousPath = Path.Combine(series.Path, episodeFile.RelativePath);
 

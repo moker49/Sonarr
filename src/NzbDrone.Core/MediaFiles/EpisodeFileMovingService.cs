@@ -36,6 +36,7 @@ namespace NzbDrone.Core.MediaFiles
         private readonly IRootFolderService _rootFolderService;
         private readonly IEventAggregator _eventAggregator;
         private readonly IConfigService _configService;
+        private readonly IVersionEpisodeFileAssignmentService _versionFiles;
         private readonly Logger _logger;
 
         public EpisodeFileMovingService(IEpisodeService episodeService,
@@ -48,6 +49,7 @@ namespace NzbDrone.Core.MediaFiles
                                 IRootFolderService rootFolderService,
                                 IEventAggregator eventAggregator,
                                 IConfigService configService,
+                                IVersionEpisodeFileAssignmentService versionFiles,
                                 Logger logger)
         {
             _episodeService = episodeService;
@@ -60,11 +62,17 @@ namespace NzbDrone.Core.MediaFiles
             _rootFolderService = rootFolderService;
             _eventAggregator = eventAggregator;
             _configService = configService;
+            _versionFiles = versionFiles;
             _logger = logger;
         }
 
         public EpisodeFile MoveEpisodeFile(EpisodeFile episodeFile, Series series)
         {
+            if (_versionFiles.IsOwnedFile(episodeFile.Id))
+            {
+                throw new InvalidOperationException("Version-owned episode files cannot be renamed until version-aware renaming is available.");
+            }
+
             var episodes = _episodeService.GetEpisodesByFileId(episodeFile.Id);
             return MoveEpisodeFile(episodeFile, series, episodes);
         }
