@@ -30,6 +30,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
         private readonly IExistingExtraFiles _existingExtraFiles;
         private readonly IDiskProvider _diskProvider;
         private readonly IHistoryService _historyService;
+        private readonly IEpisodeDownloadReservationService _reservations;
         private readonly IEventAggregator _eventAggregator;
         private readonly IManageCommandQueue _commandQueueManager;
         private readonly Logger _logger;
@@ -40,6 +41,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
                                       IExistingExtraFiles existingExtraFiles,
                                       IDiskProvider diskProvider,
                                       IHistoryService historyService,
+                                      IEpisodeDownloadReservationService reservations,
                                       IEventAggregator eventAggregator,
                                       IManageCommandQueue commandQueueManager,
                                       Logger logger)
@@ -50,12 +52,27 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
             _existingExtraFiles = existingExtraFiles;
             _diskProvider = diskProvider;
             _historyService = historyService;
+            _reservations = reservations;
             _eventAggregator = eventAggregator;
             _commandQueueManager = commandQueueManager;
             _logger = logger;
         }
 
         public List<ImportResult> Import(List<ImportDecision> decisions, bool newDownload, DownloadClientItem downloadClientItem = null, ImportMode importMode = ImportMode.Auto)
+        {
+            var clientId = downloadClientItem?.DownloadClientInfo?.Id;
+            if (clientId.HasValue && downloadClientItem.DownloadId.IsNotNullOrWhiteSpace())
+            {
+                lock (EpisodeDownloadSynchronization.For(clientId.Value, downloadClientItem.DownloadId))
+                {
+                    return ImportCore(decisions, newDownload, downloadClientItem, importMode);
+                }
+            }
+
+            return ImportCore(decisions, newDownload, downloadClientItem, importMode);
+        }
+
+        private List<ImportResult> ImportCore(List<ImportDecision> decisions, bool newDownload, DownloadClientItem downloadClientItem, ImportMode importMode)
         {
             var qualifiedImports = decisions
                 .Where(decision => decision.Approved)
@@ -75,6 +92,15 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
 
                 try
                 {
+                    var clientId = downloadClientItem?.DownloadClientInfo?.Id;
+                    if (localEpisode.SeriesVersionId.HasValue ||
+                        (clientId.HasValue && (_reservations.HasUnboundForClient(clientId.Value) ||
+                            (downloadClientItem.DownloadId.IsNotNullOrWhiteSpace() && _reservations.FindByClientDownload(clientId.Value, downloadClientItem.DownloadId) != null))))
+                    {
+                        importResults.Add(new ImportResult(importDecision, "Version-aware import is not yet available for this download."));
+                        continue;
+                    }
+
                     // check if already imported
                     if (importResults.SelectMany(r => r.ImportDecision.LocalEpisode.Episodes)
                                          .Select(e => e.Id)

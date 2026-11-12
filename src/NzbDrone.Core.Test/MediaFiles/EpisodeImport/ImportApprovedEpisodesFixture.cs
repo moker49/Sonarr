@@ -99,6 +99,42 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeImport
         }
 
         [Test]
+        public void versioned_episode_cannot_bypass_the_managed_import_guard()
+        {
+            var decision = _approvedDecisions.First();
+            decision.LocalEpisode.SeriesVersionId = 42;
+
+            var result = Subject.Import(new List<ImportDecision> { decision }, true);
+
+            result.Single().Result.Should().NotBe(ImportResultType.Imported);
+            Mocker.GetMock<IUpgradeMediaFiles>().Verify(v => v.UpgradeEpisodeFile(It.IsAny<EpisodeFile>(), It.IsAny<LocalEpisode>(), It.IsAny<bool>()), Times.Never());
+            Mocker.GetMock<IMediaFileService>().Verify(v => v.Add(It.IsAny<EpisodeFile>()), Times.Never());
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void reserved_or_uncertain_download_cannot_be_manually_imported(bool bound)
+        {
+            var decision = _approvedDecisions.First();
+            var item = new DownloadClientItem { DownloadId = "job", DownloadClientInfo = new DownloadClientItemClientInfo { Id = 7 } };
+            if (bound)
+            {
+                Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.FindByClientDownload(7, "job"))
+                    .Returns(new EpisodeDownloadReservation { Id = 12, SeriesVersionId = 42 });
+            }
+            else
+            {
+                Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.HasUnboundForClient(7)).Returns(true);
+            }
+
+            var result = Subject.Import(new List<ImportDecision> { decision }, true, item);
+
+            result.Single().Result.Should().NotBe(ImportResultType.Imported);
+            Mocker.GetMock<IUpgradeMediaFiles>().Verify(v => v.UpgradeEpisodeFile(It.IsAny<EpisodeFile>(), It.IsAny<LocalEpisode>(), It.IsAny<bool>()), Times.Never());
+            Mocker.GetMock<IMediaFileService>().Verify(v => v.Add(It.IsAny<EpisodeFile>()), Times.Never());
+        }
+
+        [Test]
         public void should_import_each_approved()
         {
             GivenExistingFileOnDisk();

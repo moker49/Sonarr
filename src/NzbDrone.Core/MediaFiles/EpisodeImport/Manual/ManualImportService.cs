@@ -514,6 +514,13 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
                 if (file.DownloadId.IsNotNullOrWhiteSpace())
                 {
                     trackedDownload = _trackedDownloadService.Find(file.DownloadId);
+                    if (trackedDownload?.DownloadItem?.DownloadClientInfo == null ||
+                        trackedDownload.DownloadItem.DownloadClientInfo.Id != trackedDownload.DownloadClient)
+                    {
+                        imported.Add(new ImportResult(new ImportDecision(localEpisode), "The selected download or its client cannot be verified."));
+                        continue;
+                    }
+
                     localEpisode.DownloadClientEpisodeInfo = trackedDownload?.RemoteEpisode?.ParsedEpisodeInfo;
                     localEpisode.DownloadItem = trackedDownload?.DownloadItem;
                 }
@@ -587,10 +594,20 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
             foreach (var groupedTrackedDownload in importedTrackedDownload.GroupBy(i => i.TrackedDownload.DownloadItem.DownloadId).ToList())
             {
                 var trackedDownload = groupedTrackedDownload.First().TrackedDownload;
-                var importedSeries = imported.First().ImportDecision.LocalEpisode.Series;
+                var importedResults = groupedTrackedDownload.Select(c => c.ImportResult)
+                    .Where(c => c.Result == ImportResultType.Imported)
+                    .ToList();
+
+                // A failed or blocked import must never trigger cleanup of its source.
+                if (importedResults.Count == 0)
+                {
+                    continue;
+                }
+
+                var importedSeries = importedResults.First().ImportDecision.LocalEpisode.Series;
                 var outputPath = trackedDownload.ImportItem.OutputPath.FullPath;
 
-                if (_diskProvider.FolderExists(outputPath))
+                if (importedResults.Count == groupedTrackedDownload.Count() && _diskProvider.FolderExists(outputPath))
                 {
                     if (_downloadedEpisodesImportService.ShouldDeleteFolder(
                             new DirectoryInfo(outputPath), importedSeries) &&
@@ -599,10 +616,6 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
                         _diskProvider.DeleteFolder(outputPath, true);
                     }
                 }
-
-                var importedResults = groupedTrackedDownload.Select(c => c.ImportResult)
-                    .Where(c => c.Result == ImportResultType.Imported)
-                    .ToList();
 
                 var allEpisodesImported = importedResults
                                                                 .SelectMany(c => c.ImportDecision.LocalEpisode.Episodes).Count() >=
