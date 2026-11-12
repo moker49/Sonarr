@@ -5,6 +5,7 @@ using FluentAssertions;
 using Moq;
 using NUnit.Framework;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.Languages;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.EpisodeImport;
@@ -94,6 +95,35 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeImport
                   {
                       localEpisode.Episodes = _localEpisode.Episodes;
                   });
+        }
+
+        [Test]
+        public void version_context_is_applied_before_import_specifications()
+        {
+            GivenAugmentationSuccess();
+            GivenSpecifications(_pass1);
+            Mocker.GetMock<IEpisodeImportVersionContext>().Setup(s => s.Apply(It.IsAny<LocalEpisode>(), It.IsAny<DownloadClientItem>(), It.IsAny<TrackedDownload>()))
+                .Callback<LocalEpisode, DownloadClientItem, TrackedDownload>((local, item, tracked) => local.SeriesVersionId = 34);
+
+            var decision = Subject.GetImportDecisions(_videoFiles, _series).Single();
+
+            decision.LocalEpisode.SeriesVersionId.Should().Be(34);
+            _pass1.Verify(s => s.IsSatisfiedBy(It.Is<LocalEpisode>(e => e.SeriesVersionId == 34), It.IsAny<DownloadClientItem>()), Times.Once());
+        }
+
+        [Test]
+        public void unresolved_version_context_rejects_the_import_decision()
+        {
+            GivenAugmentationSuccess();
+            GivenSpecifications(_pass1);
+            Mocker.GetMock<IEpisodeImportVersionContext>().Setup(s => s.Apply(It.IsAny<LocalEpisode>(), It.IsAny<DownloadClientItem>(), It.IsAny<TrackedDownload>()))
+                .Throws(new System.InvalidOperationException("reservation mismatch"));
+
+            var decision = Subject.GetImportDecisions(_videoFiles, _series).Single();
+
+            decision.Approved.Should().BeFalse();
+            decision.Rejections.Should().ContainSingle(r => r.Reason == ImportRejectionReason.VersionContextUnavailable);
+            _pass1.Verify(s => s.IsSatisfiedBy(It.IsAny<LocalEpisode>(), It.IsAny<DownloadClientItem>()), Times.Never());
         }
 
         [Test]

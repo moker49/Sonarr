@@ -31,6 +31,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
         private readonly IDetectSample _detectSample;
         private readonly ITrackedDownloadService _trackedDownloadService;
         private readonly ICustomFormatCalculationService _formatCalculator;
+        private readonly IEpisodeImportVersionContext _versionContext;
         private readonly Logger _logger;
 
         public ImportDecisionMaker(IEnumerable<IImportDecisionEngineSpecification> specifications,
@@ -40,6 +41,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
                                    IDetectSample detectSample,
                                    ITrackedDownloadService trackedDownloadService,
                                    ICustomFormatCalculationService formatCalculator,
+                                   IEpisodeImportVersionContext versionContext,
                                    Logger logger)
         {
             _specifications = specifications;
@@ -49,6 +51,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
             _detectSample = detectSample;
             _trackedDownloadService = trackedDownloadService;
             _formatCalculator = formatCalculator;
+            _versionContext = versionContext;
             _logger = logger;
         }
 
@@ -148,14 +151,25 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
                 }
                 else
                 {
+                    TrackedDownload trackedDownload = null;
                     if (downloadClientItem?.DownloadId.IsNotNullOrWhiteSpace() == true)
                     {
-                        var trackedDownload = _trackedDownloadService.Find(downloadClientItem.DownloadId);
+                        trackedDownload = _trackedDownloadService.Find(downloadClientItem.DownloadId);
 
                         if (trackedDownload?.RemoteEpisode?.Release?.IndexerFlags != null)
                         {
                             localEpisode.IndexerFlags = trackedDownload.RemoteEpisode.Release.IndexerFlags;
                         }
+                    }
+
+                    try
+                    {
+                        _versionContext.Apply(localEpisode, downloadClientItem, trackedDownload);
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        _logger.Debug(ex, "Unable to restore the import version context");
+                        return new ImportDecision(localEpisode, new ImportRejection(ImportRejectionReason.VersionContextUnavailable, ex.Message));
                     }
 
                     localEpisode.CustomFormats = _formatCalculator.ParseCustomFormat(localEpisode);
