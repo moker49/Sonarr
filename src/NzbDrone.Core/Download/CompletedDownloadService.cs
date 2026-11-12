@@ -37,6 +37,7 @@ namespace NzbDrone.Core.Download
         private readonly IMediaFileService _mediaFileService;
         private readonly IRejectedImportService _rejectedImportService;
         private readonly IEpisodeDownloadReservationService _reservations;
+        private readonly IEpisodeVersionDownloadCompletionService _versionCompletion;
         private readonly Logger _logger;
 
         public CompletedDownloadService(IEventAggregator eventAggregator,
@@ -50,6 +51,7 @@ namespace NzbDrone.Core.Download
                                         IMediaFileService mediaFileService,
                                         IRejectedImportService rejectedImportService,
                                         IEpisodeDownloadReservationService reservations,
+                                        IEpisodeVersionDownloadCompletionService versionCompletion,
                                         Logger logger)
         {
             _eventAggregator = eventAggregator;
@@ -63,6 +65,7 @@ namespace NzbDrone.Core.Download
             _mediaFileService = mediaFileService;
             _rejectedImportService = rejectedImportService;
             _reservations = reservations;
+            _versionCompletion = versionCompletion;
             _logger = logger;
         }
 
@@ -91,6 +94,15 @@ namespace NzbDrone.Core.Download
             // Only process tracked downloads that are still downloading or have been blocked for importing due to an issue with matching
             if (trackedDownload.State != TrackedDownloadState.Downloading && trackedDownload.State != TrackedDownloadState.ImportBlocked)
             {
+                return;
+            }
+
+            if (trackedDownload.SeriesVersionId.HasValue)
+            {
+                if (ValidatePath(trackedDownload))
+                {
+                    trackedDownload.State = TrackedDownloadState.ImportPending;
+                }
                 return;
             }
 
@@ -193,7 +205,7 @@ namespace NzbDrone.Core.Download
                 return;
             }
 
-            if (importResults.Count == 1)
+            if (importResults.Count == 1 && !trackedDownload.SeriesVersionId.HasValue)
             {
                 var firstResult = importResults.First();
 
@@ -228,6 +240,23 @@ namespace NzbDrone.Core.Download
 
         public bool VerifyImport(TrackedDownload trackedDownload, List<ImportResult> importResults)
         {
+            var reservation = _reservations.FindByClientDownload(trackedDownload.DownloadClient, trackedDownload.DownloadItem.DownloadId);
+            if (reservation != null || trackedDownload.SeriesVersionId.HasValue || trackedDownload.EpisodeDownloadReservationId.HasValue || trackedDownload.HasUnresolvedReservation || _reservations.HasUnboundForClient(trackedDownload.DownloadClient))
+            {
+                if (!MatchesReservation(trackedDownload, reservation))
+                {
+                    return false;
+                }
+
+                var complete = reservation.State == EpisodeDownloadReservationState.Imported ||
+                    (reservation.State == EpisodeDownloadReservationState.Submitted && _versionCompletion.Complete(reservation.SeriesId, reservation.Id));
+                if (complete)
+                {
+                    trackedDownload.State = TrackedDownloadState.Imported;
+                }
+                return complete;
+            }
+
             var allEpisodesImported = importResults.Where(c => c.Result == ImportResultType.Imported)
                                                    .SelectMany(c => c.ImportDecision.LocalEpisode.Episodes)
                                                    .Count() >= Math.Max(1,
@@ -301,14 +330,36 @@ namespace NzbDrone.Core.Download
 
         private bool BlockManagedImport(TrackedDownload trackedDownload)
         {
-            if (!trackedDownload.EpisodeDownloadReservationId.HasValue && !trackedDownload.SeriesVersionId.HasValue && !trackedDownload.HasUnresolvedReservation && !_reservations.HasUnboundForClient(trackedDownload.DownloadClient))
+            var reservation = _reservations.FindByClientDownload(trackedDownload.DownloadClient, trackedDownload.DownloadItem.DownloadId);
+            if (reservation == null && !trackedDownload.EpisodeDownloadReservationId.HasValue && !trackedDownload.SeriesVersionId.HasValue && !trackedDownload.HasUnresolvedReservation && !_reservations.HasUnboundForClient(trackedDownload.DownloadClient))
             {
                 return false;
             }
 
-            trackedDownload.Warn("Version-aware import is not yet available for this download.");
+            if (MatchesReservation(trackedDownload, reservation))
+            {
+                if (reservation.State == EpisodeDownloadReservationState.Imported)
+                {
+                    trackedDownload.State = TrackedDownloadState.Imported;
+                    return true;
+                }
+                if (reservation.State == EpisodeDownloadReservationState.Submitted)
+                {
+                    return false;
+                }
+            }
+
+            trackedDownload.Warn("The download's version reservation or client identity could not be verified.");
             SetStateToImportBlocked(trackedDownload);
             return true;
+        }
+
+        private static bool MatchesReservation(TrackedDownload tracked, EpisodeDownloadReservation reservation)
+        {
+            return reservation != null && tracked.EpisodeDownloadReservationId == reservation.Id && tracked.SeriesVersionId == reservation.SeriesVersionId &&
+                tracked.DownloadClient == reservation.DownloadClientId && tracked.DownloadItem.DownloadClientInfo?.Id == tracked.DownloadClient &&
+                string.Equals(tracked.DownloadItem.DownloadId?.Trim(), reservation.DownloadId?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                tracked.RemoteEpisode?.Series?.Id == reservation.SeriesId && tracked.RemoteEpisode.Episodes?.Count > 0 && !tracked.HasUnresolvedReservation;
         }
 
         private void SetStateToImportBlocked(TrackedDownload trackedDownload)

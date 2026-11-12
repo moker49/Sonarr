@@ -85,6 +85,17 @@ namespace NzbDrone.Core.Download
         {
             if (trackedDownload.EpisodeDownloadReservationId.HasValue || trackedDownload.SeriesVersionId.HasValue || trackedDownload.HasUnresolvedReservation || _reservations.HasUnboundForClient(trackedDownload.DownloadClient))
             {
+                if (enableCompletedDownloadHandling && trackedDownload.State == TrackedDownloadState.ImportPending)
+                {
+                    // The completed service validates the bound reservation and
+                    // uses the journaled version import path.
+                    _completedDownloadService.Import(trackedDownload);
+                    return;
+                }
+                if (trackedDownload.State == TrackedDownloadState.Imported)
+                {
+                    return;
+                }
                 trackedDownload.Warn("Version-aware download processing is not yet available for this download.");
                 trackedDownload.State = TrackedDownloadState.ImportBlocked;
                 return;

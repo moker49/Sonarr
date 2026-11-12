@@ -207,6 +207,7 @@ namespace NzbDrone.Core.MediaFiles
             }
 
             if (importMode == ImportMode.Move &&
+                !importResults.Any(i => i.ImportDecision.LocalEpisode?.SeriesVersionId.HasValue == true) &&
                 importResults.Any(i => i.Result == ImportResultType.Imported) &&
                 ShouldDeleteFolder(directoryInfo, series))
             {

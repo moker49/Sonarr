@@ -91,6 +91,71 @@ namespace NzbDrone.Core.Test.Download.CompletedDownloadServiceTests
             };
         }
 
+        private EpisodeDownloadReservation GivenBoundVersion()
+        {
+            _trackedDownload.DownloadClient = 7;
+            _trackedDownload.DownloadItem.DownloadClientInfo = new DownloadClientItemClientInfo { Id = 7 };
+            _trackedDownload.RemoteEpisode.Series.Id = 1;
+            _trackedDownload.EpisodeDownloadReservationId = 12;
+            _trackedDownload.SeriesVersionId = 34;
+            var reservation = new EpisodeDownloadReservation { Id = 12, SeriesId = 1, SeriesVersionId = 34, DownloadClientId = 7, DownloadId = _trackedDownload.DownloadItem.DownloadId, State = EpisodeDownloadReservationState.Submitted };
+            Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.FindByClientDownload(7, _trackedDownload.DownloadItem.DownloadId)).Returns(reservation);
+            Mocker.GetMock<IDownloadedEpisodesImportService>().Setup(s => s.ProcessPath(It.IsAny<string>(), It.IsAny<ImportMode>(), It.IsAny<Series>(), It.IsAny<DownloadClientItem>())).Returns(new List<ImportResult>());
+            return reservation;
+        }
+
+        [Test]
+        public void bound_version_download_uses_import_pipeline_and_durable_completion()
+        {
+            GivenBoundVersion();
+            Mocker.GetMock<IEpisodeVersionDownloadCompletionService>().Setup(s => s.Complete(1, 12)).Returns(true);
+
+            Subject.Import(_trackedDownload);
+
+            _trackedDownload.State.Should().Be(TrackedDownloadState.Imported);
+            Mocker.GetMock<IDownloadedEpisodesImportService>().Verify(s => s.ProcessPath(It.IsAny<string>(), ImportMode.Auto, _trackedDownload.RemoteEpisode.Series, It.IsAny<DownloadClientItem>()), Times.Once());
+            Mocker.GetMock<IEventAggregator>().Verify(s => s.PublishEvent(It.IsAny<DownloadCompletedEvent>()), Times.Never());
+        }
+
+        [Test]
+        public void bound_version_can_become_import_pending_without_reparsing_its_series_title()
+        {
+            GivenBoundVersion();
+            Subject.Check(_trackedDownload);
+            _trackedDownload.State.Should().Be(TrackedDownloadState.ImportPending);
+            Mocker.GetMock<IParsingService>().Verify(s => s.GetSeries(It.IsAny<string>()), Times.Never());
+        }
+
+        [Test]
+        public void completed_version_reservation_is_restored_without_reimport_or_duplicate_completion_events()
+        {
+            var reservation = GivenBoundVersion();
+            reservation.State = EpisodeDownloadReservationState.Imported;
+            Subject.Import(_trackedDownload);
+            _trackedDownload.State.Should().Be(TrackedDownloadState.Imported);
+            Mocker.GetMock<IDownloadedEpisodesImportService>().Verify(s => s.ProcessPath(It.IsAny<string>(), It.IsAny<ImportMode>(), It.IsAny<Series>(), It.IsAny<DownloadClientItem>()), Times.Never());
+            Mocker.GetMock<IEventAggregator>().Verify(s => s.PublishEvent(It.IsAny<DownloadCompletedEvent>()), Times.Never());
+        }
+
+        [Test]
+        public void bound_version_with_a_different_client_identity_remains_blocked()
+        {
+            GivenBoundVersion();
+            _trackedDownload.DownloadItem.DownloadClientInfo.Id = 8;
+            Subject.Import(_trackedDownload);
+            _trackedDownload.State.Should().Be(TrackedDownloadState.ImportBlocked);
+            Mocker.GetMock<IDownloadedEpisodesImportService>().Verify(s => s.ProcessPath(It.IsAny<string>(), It.IsAny<ImportMode>(), It.IsAny<Series>(), It.IsAny<DownloadClientItem>()), Times.Never());
+        }
+
+        [Test]
+        public void version_completion_does_not_trust_legacy_import_result_counts()
+        {
+            GivenBoundVersion();
+            var results = new List<ImportResult> { new ImportResult(new ImportDecision(new LocalEpisode { Episodes = new List<Episode> { _episode1 } }), new EpisodeFile { Id = 99 }) };
+            Subject.VerifyImport(_trackedDownload, results).Should().BeFalse();
+            _trackedDownload.State.Should().NotBe(TrackedDownloadState.Imported);
+        }
+
         [Test]
         public void managed_download_cannot_use_ordinary_import_path()
         {

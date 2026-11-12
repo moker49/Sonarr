@@ -13,6 +13,19 @@ namespace NzbDrone.Core.Test.Download
     public class ManagedDownloadProcessingGuardFixture : CoreTest<DownloadProcessingService>
     {
         [Test]
+        public void managed_import_pending_job_is_delegated_to_validating_completed_service()
+        {
+            var tracked = new TrackedDownload { IsTrackable = true, State = TrackedDownloadState.ImportPending, EpisodeDownloadReservationId = 1, SeriesVersionId = 2, DownloadItem = new DownloadClientItem { DownloadId = "job" } };
+            Mocker.GetMock<ITrackedDownloadService>().Setup(s => s.GetTrackedDownloads()).Returns(new List<TrackedDownload> { tracked });
+            Mocker.GetMock<NzbDrone.Core.Configuration.IConfigService>().SetupGet(s => s.EnableCompletedDownloadHandling).Returns(true);
+
+            Subject.Execute(new ProcessMonitoredDownloadsCommand());
+
+            Mocker.GetMock<ICompletedDownloadService>().Verify(s => s.Import(tracked), Times.Once());
+            Mocker.GetMock<IFailedDownloadService>().Verify(s => s.ProcessFailed(It.IsAny<TrackedDownload>()), Times.Never());
+        }
+
+        [Test]
         public void managed_failed_or_imported_jobs_are_not_processed_or_removed_by_legacy_pipeline()
         {
             var failed = new TrackedDownload

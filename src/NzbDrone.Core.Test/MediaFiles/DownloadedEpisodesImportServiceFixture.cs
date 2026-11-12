@@ -96,6 +96,20 @@ namespace NzbDrone.Core.Test.MediaFiles
         }
 
         [Test]
+        public void version_import_preserves_source_folder_even_after_all_video_files_are_moved()
+        {
+            GivenValidSeries();
+            var imported = new List<ImportDecision> { new ImportDecision(new LocalEpisode { SeriesVersionId = 7 }) };
+            Mocker.GetMock<IMakeImportDecision>().Setup(s => s.GetImportDecisions(It.IsAny<List<string>>(), It.IsAny<Series>(), It.IsAny<DownloadClientItem>(), null, true, true)).Returns(imported);
+            Mocker.GetMock<IImportApprovedEpisodes>().Setup(s => s.Import(It.IsAny<List<ImportDecision>>(), true, null, ImportMode.Auto))
+                .Returns(imported.Select(i => new ImportResult(i)).ToList()).Callback(WasImportedResponse);
+
+            Subject.ProcessRootFolder(new DirectoryInfo(_droneFactory));
+
+            Mocker.GetMock<IDiskProvider>().Verify(d => d.DeleteFolder(It.IsAny<string>(), It.IsAny<bool>()), Times.Never());
+        }
+
+        [Test]
         public void should_search_for_series_using_folder_name()
         {
             Subject.ProcessRootFolder(new DirectoryInfo(_droneFactory));
