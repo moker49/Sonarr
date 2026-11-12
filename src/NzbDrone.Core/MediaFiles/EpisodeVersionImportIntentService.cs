@@ -137,6 +137,14 @@ namespace NzbDrone.Core.MediaFiles
 
         public void BeginMove(int importId, bool copyOnly)
         {
+            lock (EpisodeVersionImportSynchronization.For(importId))
+            {
+                BeginMoveCore(importId, copyOnly);
+            }
+        }
+
+        private void BeginMoveCore(int importId, bool copyOnly)
+        {
             EpisodeVersionImportIntent snapshot;
             using (var connection = _database.OpenConnection())
             {
@@ -158,6 +166,10 @@ namespace NzbDrone.Core.MediaFiles
             using var transaction = writeConnection.BeginTransaction(IsolationLevel.ReadCommitted);
             var intent = LockAndRead(writeConnection, transaction, importId);
             var reservationValid = writeConnection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeDownloadReservations\" WHERE \"Id\" = @reservationId AND \"SeriesId\" = @seriesId AND \"SeriesVersionId\" = @versionId AND \"State\" = @submitted", new { reservationId = intent.ReservationId, seriesId = intent.SeriesId, versionId = intent.SeriesVersionId, submitted = (int)EpisodeDownloadReservationState.Submitted }, transaction);
+            var currentSeriesPath = writeConnection.QuerySingle<string>("SELECT \"Path\" FROM \"Series\" WHERE \"Id\" = @seriesId", new { seriesId = intent.SeriesId }, transaction);
+            var registeredPaths = writeConnection.Query<string>("SELECT \"RelativePath\" FROM \"EpisodeFiles\" WHERE \"SeriesId\" = @seriesId", new { seriesId = intent.SeriesId }, transaction);
+            var destinationValid = Path.GetFullPath(currentSeriesPath).IsParentPath(intent.DestinationPath) &&
+                !registeredPaths.Any(p => PathEqualityComparer.Instance.Equals(Path.GetFullPath(Path.Combine(currentSeriesPath, p)), intent.DestinationPath));
             var episodeLocks = writeConnection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionImportEpisodeLocks\" WHERE \"ImportId\" = @importId AND \"SeriesVersionId\" = @versionId", new { importId, versionId = intent.SeriesVersionId }, transaction);
             var expectedHashes = new[] { intent.SourcePath, intent.DestinationPath }.Select(path => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path.ToUpperInvariant())))).ToArray();
             var pathLocks = writeConnection.ExecuteScalar<int>("SELECT COUNT(*) FROM \"EpisodeVersionImportPathLocks\" WHERE \"ImportId\" = @importId AND \"PathHash\" IN @expectedHashes", new { importId, expectedHashes }, transaction);
@@ -171,7 +183,7 @@ namespace NzbDrone.Core.MediaFiles
                 JOIN ""Series"" s ON s.""Id"" = sv.""SeriesId"" AND s.""QualityProfileId"" = p.""CompositeProfileId""
                 WHERE sv.""Id"" = @versionId AND sv.""SeriesId"" = @seriesId AND sv.""Retired"" = @retired", new { versionId = intent.SeriesVersionId, seriesId = intent.SeriesId, retired = false }, transaction);
             if (intent.State != EpisodeVersionImportIntentState.Prepared || intent.SourcePath != snapshot.SourcePath || intent.DestinationPath != snapshot.DestinationPath ||
-                reservationValid != 1 || activeVersion != 1 || episodeLocks == 0 || validEpisodeLocks != episodeLocks || pathLocks != 2 || !_disk.FileExists(intent.SourcePath) || _disk.FileExists(intent.DestinationPath))
+                !destinationValid || reservationValid != 1 || activeVersion != 1 || episodeLocks == 0 || validEpisodeLocks != episodeLocks || pathLocks != 2 || !_disk.FileExists(intent.SourcePath) || _disk.FileExists(intent.DestinationPath))
             {
                 throw new InvalidOperationException("The prepared import changed before the move.");
             }
@@ -182,7 +194,10 @@ namespace NzbDrone.Core.MediaFiles
 
         public void ConfirmMoved(int importId)
         {
-            ConfirmMovedCore(importId, null, null);
+            lock (EpisodeVersionImportSynchronization.For(importId))
+            {
+                ConfirmMovedCore(importId, null, null);
+            }
         }
 
         public void RecoverMoved(int seriesId, int importId, string note)
@@ -192,7 +207,10 @@ namespace NzbDrone.Core.MediaFiles
                 throw new ArgumentException("A series and recovery explanation are required.");
             }
 
-            ConfirmMovedCore(importId, seriesId, note);
+            lock (EpisodeVersionImportSynchronization.For(importId))
+            {
+                ConfirmMovedCore(importId, seriesId, note);
+            }
         }
 
         private void ConfirmMovedCore(int importId, int? expectedSeriesId, string note)
@@ -241,6 +259,14 @@ namespace NzbDrone.Core.MediaFiles
         }
 
         public int RegisterMovedFile(int seriesId, int importId, EpisodeFile file)
+        {
+            lock (EpisodeVersionImportSynchronization.For(importId))
+            {
+                return RegisterMovedFileCore(seriesId, importId, file);
+            }
+        }
+
+        private int RegisterMovedFileCore(int seriesId, int importId, EpisodeFile file)
         {
             if (file == null || file.Id != 0 || file.SeriesId != seriesId || file.Quality == null || file.Languages == null)
             {
@@ -333,6 +359,14 @@ namespace NzbDrone.Core.MediaFiles
 
         public void MarkUncertain(int importId, string note)
         {
+            lock (EpisodeVersionImportSynchronization.For(importId))
+            {
+                MarkUncertainCore(importId, note);
+            }
+        }
+
+        private void MarkUncertainCore(int importId, string note)
+        {
             if (string.IsNullOrWhiteSpace(note) || note.Length > 2048)
             {
                 throw new ArgumentException("A reconciliation note is required.", nameof(note));
@@ -362,6 +396,14 @@ namespace NzbDrone.Core.MediaFiles
         }
 
         public void CancelPrepared(int importId)
+        {
+            lock (EpisodeVersionImportSynchronization.For(importId))
+            {
+                CancelPreparedCore(importId);
+            }
+        }
+
+        private void CancelPreparedCore(int importId)
         {
             using var connection = _database.OpenConnection();
             using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
