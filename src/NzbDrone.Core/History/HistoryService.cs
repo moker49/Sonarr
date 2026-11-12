@@ -149,6 +149,18 @@ namespace NzbDrone.Core.History
 
         public void Handle(EpisodeGrabbedEvent message)
         {
+            if (message.VersionReservationId.HasValue)
+            {
+                return;
+            }
+            foreach (var history in CreateGrabbedHistory(message))
+            {
+                _historyRepository.Insert(history);
+            }
+        }
+
+        public static IEnumerable<EpisodeHistory> CreateGrabbedHistory(EpisodeGrabbedEvent message)
+        {
             foreach (var episode in message.Episode.Episodes)
             {
                 var history = new EpisodeHistory
@@ -197,7 +209,7 @@ namespace NzbDrone.Core.History
                     history.Data.Add("TorrentInfoHash", torrentRelease.InfoHash);
                 }
 
-                _historyRepository.Insert(history);
+                yield return history;
             }
         }
 

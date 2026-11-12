@@ -49,7 +49,7 @@ namespace NzbDrone.Core.Test.Download
 
             result.ReservationId.Should().Be(12);
             result.DownloadId.Should().Be("job");
-            Mocker.GetMock<IEpisodeDownloadReservationService>().Verify(s => s.Submitted(12, "job"), Times.Once());
+            Mocker.GetMock<IEpisodeVersionGrabRecorder>().Verify(s => s.Record(12, It.Is<EpisodeGrabbedEvent>(g => g.DownloadId == "job" && g.DownloadClientId == 7)), Times.Once());
         }
 
         [Test]
@@ -70,7 +70,7 @@ namespace NzbDrone.Core.Test.Download
             _client.Setup(c => c.Download(_source, null)).ReturnsAsync((string)null);
             Assert.ThrowsAsync<InvalidOperationException>(() => Subject.Submit(_source, _client.Object, null));
             _client.Setup(c => c.Download(_source, null)).ReturnsAsync("job");
-            Mocker.GetMock<IEpisodeDownloadReservationService>().Setup(s => s.Submitted(12, "job")).Throws(new InvalidOperationException("Already bound"));
+            Mocker.GetMock<IEpisodeVersionGrabRecorder>().Setup(s => s.Record(12, It.IsAny<EpisodeGrabbedEvent>())).Throws(new InvalidOperationException("Already bound"));
             Assert.ThrowsAsync<InvalidOperationException>(() => Subject.Submit(_source, _client.Object, null));
             Mocker.GetMock<IEpisodeDownloadReservationService>().Verify(s => s.MarkUncertain(12, It.IsAny<string>()), Times.Exactly(2));
         }

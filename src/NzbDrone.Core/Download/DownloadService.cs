@@ -112,6 +112,7 @@ namespace NzbDrone.Core.Download
             }
 
             string downloadClientId;
+            int? versionReservationId = null;
             try
             {
                 if (remoteEpisode.SeriesVersionId.HasValue)
@@ -119,6 +120,7 @@ namespace NzbDrone.Core.Download
                     var submission = await _versionDispatch.Submit(remoteEpisode, downloadClient, indexer);
                     remoteEpisode = submission.Episode;
                     downloadClientId = submission.DownloadId;
+                    versionReservationId = submission.ReservationId;
                 }
                 else
                 {
@@ -157,6 +159,7 @@ namespace NzbDrone.Core.Download
             }
 
             var episodeGrabbedEvent = new EpisodeGrabbedEvent(remoteEpisode);
+            episodeGrabbedEvent.VersionReservationId = versionReservationId;
             episodeGrabbedEvent.DownloadClient = downloadClient.Name;
             episodeGrabbedEvent.DownloadClientId = downloadClient.Definition.Id;
             episodeGrabbedEvent.DownloadClientName = downloadClient.Definition.Name;

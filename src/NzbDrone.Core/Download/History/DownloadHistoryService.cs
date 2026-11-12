@@ -114,11 +114,16 @@ namespace NzbDrone.Core.Download.History
         public void Handle(EpisodeGrabbedEvent message)
         {
             // Don't store grabbed events for clients that don't download IDs
-            if (message.DownloadId.IsNullOrWhiteSpace())
+            if (message.DownloadId.IsNullOrWhiteSpace() || message.VersionReservationId.HasValue)
             {
                 return;
             }
 
+            _repository.Insert(CreateGrabbedHistory(message));
+        }
+
+        public static DownloadHistory CreateGrabbedHistory(EpisodeGrabbedEvent message)
+        {
             var history = new DownloadHistory
             {
                 EventType = DownloadHistoryEventType.DownloadGrabbed,
@@ -138,7 +143,7 @@ namespace NzbDrone.Core.Download.History
             history.Data.Add("DownloadClientName", message.DownloadClientName);
             history.Data.Add("CustomFormatScore", message.Episode.CustomFormatScore.ToString());
 
-            _repository.Insert(history);
+            return history;
         }
 
         public void Handle(EpisodeImportedEvent message)

@@ -11,6 +11,13 @@ namespace NzbDrone.Core.Test.Download.DownloadHistoryTests
     public class DownloadHistoryServiceFixture : CoreTest<DownloadHistoryService>
     {
         [Test]
+        public void transactionally_recorded_version_grab_does_not_write_duplicate_download_history()
+        {
+            Subject.Handle(new NzbDrone.Core.Download.EpisodeGrabbedEvent(new NzbDrone.Core.Parser.Model.RemoteEpisode()) { VersionReservationId = 12, DownloadId = "job" });
+            Mocker.GetMock<IDownloadHistoryRepository>().Verify(r => r.Insert(It.IsAny<DownloadHistory>()), Times.Never());
+        }
+
+        [Test]
         public void latest_state_is_scoped_to_client_and_version()
         {
             var expected = new DownloadHistory { DownloadClientId = 7, SeriesVersionId = 10, EventType = DownloadHistoryEventType.DownloadGrabbed };

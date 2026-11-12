@@ -43,6 +43,72 @@ namespace NzbDrone.Core.Test.Download
             Mocker.Resolve<BasicRepository<EpisodeDownloadReservationItem>>().All().Should().HaveCount(3);
         }
 
+        private EpisodeGrabbedEvent GrabFor(int reservationId)
+        {
+            return new EpisodeGrabbedEvent(new NzbDrone.Core.Parser.Model.RemoteEpisode
+            {
+                Series = _series,
+                SeriesVersionId = _sdr.Id,
+                Episodes = new System.Collections.Generic.List<Episode> { _first, _second },
+                Release = new NzbDrone.Core.Parser.Model.ReleaseInfo { Title = "Show.S01", Guid = "release", Size = 123 },
+                ParsedEpisodeInfo = new NzbDrone.Core.Parser.Model.ParsedEpisodeInfo { Quality = new NzbDrone.Core.Qualities.QualityModel() }
+            }) { DownloadClientId = 42, DownloadId = "job", VersionReservationId = reservationId };
+        }
+
+        [Test]
+        public void binding_and_grab_history_commit_atomically_and_replay_without_duplicates()
+        {
+            var id = Subject.Reserve(_sdr.Id, "release", new[] { _first.Id, _second.Id });
+            Subject.BeginDispatch(id, 42);
+            var message = GrabFor(id);
+            var recorder = Mocker.Resolve<EpisodeVersionGrabRecorder>();
+
+            recorder.Record(id, message);
+            recorder.Record(id, message);
+
+            Subject.FindByClientDownload(42, "job").GrabRecordedAt.Should().HaveValue();
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.History.EpisodeHistory>>().All().Should().HaveCount(2).And.OnlyContain(h => h.SeriesVersionId == _sdr.Id && h.DownloadId == "job");
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.Download.History.DownloadHistory>>().All().Should().ContainSingle(h => h.DownloadClientId == 42 && h.SeriesVersionId == _sdr.Id);
+        }
+
+        [Test]
+        public void mismatched_grab_coverage_cannot_bind_the_reservation()
+        {
+            var id = Subject.Reserve(_sdr.Id, "release", new[] { _first.Id, _second.Id });
+            Subject.BeginDispatch(id, 42);
+            var message = GrabFor(id);
+            message.Episode.Episodes.RemoveAt(1);
+
+            Action record = () => Mocker.Resolve<EpisodeVersionGrabRecorder>().Record(id, message);
+
+            record.Should().Throw<InvalidOperationException>();
+            Subject.FindByClientDownload(42, "job").Should().BeNull();
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.History.EpisodeHistory>>().All().Should().BeEmpty();
+        }
+
+        [Test]
+        public void history_insert_failure_rolls_back_binding_and_all_history()
+        {
+            if (Mocker.Resolve<IMainDatabase>().DatabaseType != DatabaseType.SQLite)
+            {
+                Assert.Ignore("SQLite trigger injects a failure after episode history insertion.");
+            }
+            var id = Subject.Reserve(_sdr.Id, "release", new[] { _first.Id, _second.Id });
+            Subject.BeginDispatch(id, 42);
+            using (var connection = Mocker.Resolve<IMainDatabase>().OpenConnection())
+            {
+                Dapper.SqlMapper.Execute(connection, "CREATE TRIGGER FailGrabHistory BEFORE INSERT ON \"DownloadHistory\" BEGIN SELECT RAISE(ABORT, 'Injected failure'); END;");
+            }
+
+            Action record = () => Mocker.Resolve<EpisodeVersionGrabRecorder>().Record(id, GrabFor(id));
+
+            record.Should().Throw<Exception>();
+            Subject.ForSeries(_series.Id).Single().State.Should().Be(EpisodeDownloadReservationState.Dispatching);
+            Subject.ForSeries(_series.Id).Single().GrabRecordedAt.Should().BeNull();
+            Subject.FindByClientDownload(42, "job").Should().BeNull();
+            Mocker.Resolve<BasicRepository<NzbDrone.Core.History.EpisodeHistory>>().All().Should().BeEmpty();
+        }
+
         [Test]
         public void empty_slot_dispatch_rechecks_version_assignments_and_primary_links_in_transaction()
         {

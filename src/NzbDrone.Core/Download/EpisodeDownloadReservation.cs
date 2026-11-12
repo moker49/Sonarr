@@ -19,6 +19,7 @@ namespace NzbDrone.Core.Download
         public int SeriesVersionId { get; set; }
         public string ReleaseKey { get; set; }
         public string OriginalReleaseKey { get; set; }
+        public DateTime? GrabRecordedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public EpisodeDownloadReservationState State { get; set; }
         public int? DownloadClientId { get; set; }

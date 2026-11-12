@@ -20,6 +20,13 @@ namespace NzbDrone.Core.Test.HistoryTests
 {
     public class HistoryServiceFixture : CoreTest<HistoryService>
     {
+        [Test]
+        public void transactionally_recorded_version_grab_does_not_write_duplicate_event_history()
+        {
+            Subject.Handle(new EpisodeGrabbedEvent(new RemoteEpisode()) { VersionReservationId = 12 });
+            Mocker.GetMock<IHistoryRepository>().Verify(r => r.Insert(It.IsAny<EpisodeHistory>()), Times.Never());
+        }
+
         private QualityProfile _profile;
         private QualityProfile _profileCustom;
 

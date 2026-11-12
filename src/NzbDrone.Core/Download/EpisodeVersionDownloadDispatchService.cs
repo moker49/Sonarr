@@ -28,14 +28,16 @@ namespace NzbDrone.Core.Download
         private readonly IMakeDownloadDecision _decisions;
         private readonly ISeriesService _series;
         private readonly IEpisodeService _episodes;
+        private readonly IEpisodeVersionGrabRecorder _grabs;
 
-        public EpisodeVersionDownloadDispatchService(IEpisodeDownloadReservationService reservations, IEpisodeVersionDecisionContext contexts, IMakeDownloadDecision decisions, ISeriesService series, IEpisodeService episodes)
+        public EpisodeVersionDownloadDispatchService(IEpisodeDownloadReservationService reservations, IEpisodeVersionDecisionContext contexts, IMakeDownloadDecision decisions, ISeriesService series, IEpisodeService episodes, IEpisodeVersionGrabRecorder grabs)
         {
             _reservations = reservations;
             _contexts = contexts;
             _decisions = decisions;
             _series = series;
             _episodes = episodes;
+            _grabs = grabs;
         }
 
         public RemoteEpisode Prepare(RemoteEpisode source)
@@ -99,7 +101,7 @@ namespace NzbDrone.Core.Download
                 {
                     throw new InvalidOperationException("The client accepted the request without a usable download ID.");
                 }
-                _reservations.Submitted(reservationId, id);
+                _grabs.Record(reservationId, new EpisodeGrabbedEvent(context) { DownloadId = id, DownloadClientId = client.Definition.Id, DownloadClient = client.Name, DownloadClientName = client.Definition.Name, VersionReservationId = reservationId });
                 return new EpisodeVersionDownloadSubmission { ReservationId = reservationId, DownloadId = id, Episode = context };
             }
             catch (Exception ex)

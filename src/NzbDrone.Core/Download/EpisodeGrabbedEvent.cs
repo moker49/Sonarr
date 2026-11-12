@@ -10,6 +10,7 @@ namespace NzbDrone.Core.Download
         public string DownloadClient { get; set; }
         public string DownloadClientName { get; set; }
         public string DownloadId { get; set; }
+        public int? VersionReservationId { get; set; }
 
         public EpisodeGrabbedEvent(RemoteEpisode episode)
         {
