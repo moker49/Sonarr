@@ -32,6 +32,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
         private readonly ITrackedDownloadService _trackedDownloadService;
         private readonly ICustomFormatCalculationService _formatCalculator;
         private readonly IEpisodeImportVersionContext _versionContext;
+        private readonly IEpisodeVersionDestinationPlanner _versionDestination;
         private readonly Logger _logger;
 
         public ImportDecisionMaker(IEnumerable<IImportDecisionEngineSpecification> specifications,
@@ -42,6 +43,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
                                    ITrackedDownloadService trackedDownloadService,
                                    ICustomFormatCalculationService formatCalculator,
                                    IEpisodeImportVersionContext versionContext,
+                                   IEpisodeVersionDestinationPlanner versionDestination,
                                    Logger logger)
         {
             _specifications = specifications;
@@ -52,6 +54,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
             _trackedDownloadService = trackedDownloadService;
             _formatCalculator = formatCalculator;
             _versionContext = versionContext;
+            _versionDestination = versionDestination;
             _logger = logger;
         }
 
@@ -174,6 +177,19 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
 
                     localEpisode.CustomFormats = _formatCalculator.ParseCustomFormat(localEpisode);
                     localEpisode.CustomFormatScore = localEpisode.Series.QualityProfile?.Value.CalculateCustomFormatScore(localEpisode.CustomFormats) ?? 0;
+
+                    if (localEpisode.SeriesVersionId.HasValue)
+                    {
+                        try
+                        {
+                            localEpisode.SeriesVersionDestinationPath = _versionDestination.Plan(localEpisode);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Debug(ex, "Unable to plan the version import destination");
+                            return new ImportDecision(localEpisode, new ImportRejection(ImportRejectionReason.VersionDestinationUnavailable, ex.Message));
+                        }
+                    }
 
                     decision = GetDecision(localEpisode, downloadClientItem);
                 }

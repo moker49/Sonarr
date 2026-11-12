@@ -40,13 +40,14 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeImport
             var versionSeries = new Series { Id = 1, QualityProfileId = 99 };
             var versionEpisode = new Episode { Id = 5, SeriesId = 1, EpisodeFileId = 77 };
             Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(s => s.ForVersion(It.IsAny<RemoteEpisode>(), 34))
-                .Returns(new RemoteEpisode { Series = versionSeries, Episodes = new List<Episode> { versionEpisode }, SeriesVersionId = 34 });
+                .Returns(new RemoteEpisode { Series = versionSeries, Episodes = new List<Episode> { versionEpisode }, SeriesVersionId = 34, SeriesVersionLabel = "HD" });
 
             Subject.Apply(_local, _item, _tracked);
 
             _local.Series.Should().BeSameAs(versionSeries);
             _local.Episodes.Should().ContainSingle().Which.Should().BeSameAs(versionEpisode);
             _local.SeriesVersionId.Should().Be(34);
+            _local.SeriesVersionLabel.Should().Be("HD");
             originalSeries.QualityProfileId.Should().NotBe(99);
             originalEpisode.EpisodeFileId.Should().Be(0);
         }

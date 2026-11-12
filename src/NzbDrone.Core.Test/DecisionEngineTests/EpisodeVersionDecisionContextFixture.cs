@@ -33,8 +33,8 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             };
             _versions = new Dictionary<int, List<ResolvedEpisodeVersion>>
             {
-                [1] = new List<ResolvedEpisodeVersion> { new ResolvedEpisodeVersion { EpisodeId = 1, SeriesId = 5, SeriesVersionId = 7, QualityProfileId = 20, ParentQualityProfileId = 10, EpisodeFileId = 100, Monitored = true } },
-                [2] = new List<ResolvedEpisodeVersion> { new ResolvedEpisodeVersion { EpisodeId = 2, SeriesId = 5, SeriesVersionId = 7, QualityProfileId = 20, ParentQualityProfileId = 10, Monitored = true } }
+                [1] = new List<ResolvedEpisodeVersion> { new ResolvedEpisodeVersion { EpisodeId = 1, SeriesId = 5, SeriesVersionId = 7, QualityProfileId = 20, ParentQualityProfileId = 10, EpisodeFileId = 100, Monitored = true, Label = "HD" } },
+                [2] = new List<ResolvedEpisodeVersion> { new ResolvedEpisodeVersion { EpisodeId = 2, SeriesId = 5, SeriesVersionId = 7, QualityProfileId = 20, ParentQualityProfileId = 10, Monitored = true, Label = "HD" } }
             };
             Mocker.GetMock<IEpisodeVersionResolver>().Setup(v => v.ResolveMany(It.IsAny<IReadOnlyCollection<int>>())).Returns(() => _versions);
             Mocker.GetMock<IQualityProfileService>().Setup(p => p.Get(20)).Returns(new QualityProfile { Id = 20 });
@@ -47,6 +47,7 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             var context = Subject.ForVersion(_source, 7);
 
             context.SeriesVersionId.Should().Be(7);
+            context.SeriesVersionLabel.Should().Be("HD");
             context.Series.QualityProfileId.Should().Be(20);
             context.Series.QualityProfile.Value.Id.Should().Be(20);
             context.Episodes[0].EpisodeFileId.Should().Be(100);
@@ -56,6 +57,18 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             context.Episodes[0].Series.Should().BeSameAs(context.Series);
             _source.Series.QualityProfileId.Should().Be(10);
             _source.Episodes.Should().OnlyContain(e => e.EpisodeFileId == 200);
+        }
+
+        [Test]
+        public void rejects_inconsistent_or_unsafe_labels_in_a_pack()
+        {
+            _versions[2][0].Label = "4K";
+            Action inconsistent = () => Subject.ForVersion(_source, 7);
+            inconsistent.Should().Throw<InvalidOperationException>();
+            _versions[2][0].Label = "../escape";
+            _versions[1][0].Label = "../escape";
+            Action unsafeLabel = () => Subject.ForVersion(_source, 7);
+            unsafeLabel.Should().Throw<InvalidOperationException>();
         }
 
         [Test]

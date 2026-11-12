@@ -26,6 +26,7 @@ namespace NzbDrone.Core.Parser.Model
         public List<Language> Languages { get; set; }
         public ReleaseSourceType ReleaseSource { get; set; }
         public int? SeriesVersionId { get; set; }
+        public string SeriesVersionLabel { get; set; }
 
         public RemoteEpisode()
         {

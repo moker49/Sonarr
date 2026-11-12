@@ -5,6 +5,7 @@ using NzbDrone.Core.DecisionEngine;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Profiles.Qualities;
 
 namespace NzbDrone.Core.MediaFiles.EpisodeImport
 {
@@ -68,7 +69,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
             }
 
             var resolved = _versions.ForVersion(new RemoteEpisode { Series = localEpisode.Series, Episodes = localEpisode.Episodes }, reservation.SeriesVersionId);
-            if (resolved?.Series == null || resolved.Episodes == null || resolved.SeriesVersionId != reservation.SeriesVersionId)
+            if (resolved?.Series == null || resolved.Episodes == null || resolved.SeriesVersionId != reservation.SeriesVersionId || !CompositeProfileValidator.ValidLabel(resolved.SeriesVersionLabel))
             {
                 throw new InvalidOperationException("The version context could not be restored.");
             }
@@ -76,6 +77,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport
             localEpisode.Series = resolved.Series;
             localEpisode.Episodes = resolved.Episodes;
             localEpisode.SeriesVersionId = reservation.SeriesVersionId;
+            localEpisode.SeriesVersionLabel = resolved.SeriesVersionLabel;
         }
     }
 }

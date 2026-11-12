@@ -57,9 +57,10 @@ namespace NzbDrone.Core.DecisionEngine
             }
 
             var profileIds = selections.Values.Select(v => v.QualityProfileId).Distinct().ToArray();
-            if (profileIds.Length != 1)
+            var labels = selections.Values.Select(v => v.Label).Distinct(StringComparer.Ordinal).ToArray();
+            if (profileIds.Length != 1 || labels.Length != 1 || !CompositeProfileValidator.ValidLabel(labels[0]))
             {
-                throw new InvalidOperationException("The version resolves to conflicting quality profiles.");
+                throw new InvalidOperationException("The version resolves to conflicting quality profiles or invalid labels.");
             }
 
             var profile = _profiles.Get(profileIds[0]);
@@ -82,6 +83,7 @@ namespace NzbDrone.Core.DecisionEngine
             var context = source.CloneForVersion();
             context.Series = series;
             context.SeriesVersionId = seriesVersionId;
+            context.SeriesVersionLabel = labels[0];
             context.Episodes = source.Episodes.Select(episode =>
             {
                 var copy = episode.CloneForVersion();

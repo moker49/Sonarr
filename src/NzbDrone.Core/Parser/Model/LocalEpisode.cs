@@ -28,6 +28,8 @@ namespace NzbDrone.Core.Parser.Model
         public ParsedEpisodeInfo FolderEpisodeInfo { get; set; }
         public Series Series { get; set; }
         public int? SeriesVersionId { get; set; }
+        public string SeriesVersionLabel { get; set; }
+        public string SeriesVersionDestinationPath { get; set; }
         public List<Episode> Episodes { get; set; }
         public List<DeletedEpisodeFile> OldFiles { get; set; }
         public QualityModel Quality { get; set; }
