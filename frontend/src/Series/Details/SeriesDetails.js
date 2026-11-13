@@ -23,6 +23,7 @@ import Tooltip from 'Components/Tooltip/Tooltip';
 import { align, icons, kinds, sizes, sortDirections, tooltipPositions } from 'Helpers/Props';
 import InteractiveImportModal from 'InteractiveImport/InteractiveImportModal';
 import OrganizePreviewModalConnector from 'Organize/OrganizePreviewModalConnector';
+import SeriesProfileConversionModal from 'Series/Conversion/SeriesProfileConversionModal';
 import DeleteSeriesModal from 'Series/Delete/DeleteSeriesModal';
 import EditSeriesModal from 'Series/Edit/EditSeriesModal';
 import SeriesHistoryModal from 'Series/History/SeriesHistoryModal';
@@ -75,6 +76,7 @@ class SeriesDetails extends Component {
       isOrganizeModalOpen: false,
       isManageEpisodesOpen: false,
       isEditSeriesModalOpen: false,
+      isConversionModalOpen: false,
       isDeleteSeriesModalOpen: false,
       isSeriesHistoryModalOpen: false,
       isMonitorOptionsModalOpen: false,
@@ -111,6 +113,10 @@ class SeriesDetails extends Component {
   onEditSeriesModalClose = () => {
     this.setState({ isEditSeriesModalOpen: false });
   };
+
+  onConversionPress = () => this.setState({ isConversionModalOpen: true });
+
+  onConversionClose = () => this.setState({ isConversionModalOpen: false });
 
   onDeleteSeriesPress = () => {
     this.setState({
@@ -220,6 +226,7 @@ class SeriesDetails extends Component {
       isOrganizeModalOpen,
       isManageEpisodesOpen,
       isEditSeriesModalOpen,
+      isConversionModalOpen,
       isDeleteSeriesModalOpen,
       isSeriesHistoryModalOpen,
       isMonitorOptionsModalOpen,
@@ -312,6 +319,12 @@ class SeriesDetails extends Component {
               label={translate('Delete')}
               iconName={icons.DELETE}
               onPress={this.onDeleteSeriesPress}
+            />
+
+            <PageToolbarButton
+              label={translate('ConvertSeriesProfile')}
+              iconName={icons.PROFILE}
+              onPress={this.onConversionPress}
             />
 
           </PageToolbarSection>
@@ -721,6 +734,16 @@ class SeriesDetails extends Component {
             seriesId={id}
             onModalClose={this.onDeleteSeriesModalClose}
           />
+
+          {
+            isConversionModalOpen &&
+              <SeriesProfileConversionModal
+                seriesId={id}
+                qualityProfileId={qualityProfileId}
+                hasEpisodeFiles={hasEpisodeFiles}
+                onModalClose={this.onConversionClose}
+              />
+          }
 
           <MonitoringOptionsModal
             isOpen={isMonitorOptionsModalOpen}

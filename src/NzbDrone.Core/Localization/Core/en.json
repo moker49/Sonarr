@@ -2157,5 +2157,21 @@
   "Yes": "Yes",
   "YesCancel": "Yes, Cancel",
   "Yesterday": "Yesterday",
-  "YesterdayAt": "Yesterday at {time}"
+  "YesterdayAt": "Yesterday at {time}",
+  "ConvertSeriesProfile": "Convert Profile",
+  "SeriesConversionRequestFailed": "The conversion request failed. Please try again.",
+  "SeriesConversionAlreadyComposite": "This series already uses a composite profile. Conversion back to an ordinary profile is not available yet.",
+  "SeriesConversionDescription": "Choose a composite profile and the version that will own existing files. Files remain at their current paths.",
+  "SeriesConversionNoProfiles": "No composite profiles are available. Create a composite profile before converting this series.",
+  "SeriesConversionCompositeProfile": "Composite Profile",
+  "SeriesConversionExistingFiles": "Version for Existing Files",
+  "SeriesConversionPrimary": "Primary",
+  "SeriesConversionSelect": "Select...",
+  "SeriesConversionReview": "Review Conversion",
+  "SeriesConversionReviewSummary": "This conversion covers {episodes} episodes and {files} existing files.",
+  "SeriesConversionFileCount": "{count} existing files",
+  "SeriesConversionFileDetails": "{episodes} episodes, {size}",
+  "SeriesConversionApplyNotice": "Applying changes the series profile and file assignments. Reverse conversion is not yet available.",
+  "SeriesConversionPreview": "Preview Conversion",
+  "SeriesConversionApply": "Apply Conversion"
 }
