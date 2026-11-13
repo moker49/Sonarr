@@ -2189,5 +2189,15 @@
   "CompositeEditorNeedsProfiles": "Create at least two other ordinary quality profiles before configuring versions.",
   "CompositeEditorRequestFailed": "The profile request failed. Close this editor and reopen it to refresh the profile before trying again.",
   "CompositeEditorRemove": "Remove Composite Definition",
-  "CompositeEditorRemoveHelp": "Remove the two version definitions and keep this quality profile as an ordinary profile? This is only allowed while the composite is unused."
+  "CompositeEditorRemoveHelp": "Remove the two version definitions and keep this quality profile as an ordinary profile? This is only allowed while the composite is unused.",
+  "SeriesVersionsTitle": "Versions",
+  "SeriesVersionsVersion": "Version",
+  "SeriesVersionsFile": "Assigned File",
+  "SeriesVersionsSummary": "{assigned} of {total} episodes have assigned files; {reserved} episodes have active reservations.",
+  "SeriesVersionsSearchHelp": "Search an empty episode slot to acquire this version. Releases covering an occupied slot are rejected. Replacements and version file deletion are not yet available.",
+  "SeriesVersionsOrdinary": "This series uses an ordinary profile. Use Convert Profile to preview a composite conversion first.",
+  "SeriesVersionsLoadError": "Unable to load series version status. Refresh to try again.",
+  "SeriesVersionsReserved": "Reserved by a download or import",
+  "SeriesVersionsEmpty": "No assigned file",
+  "SeriesVersionsBack": "Back to Version Files"
 }

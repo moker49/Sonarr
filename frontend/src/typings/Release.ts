@@ -14,6 +14,7 @@ export interface ReleaseEpisode {
 
 interface Release {
   guid: string;
+  seriesVersionId?: number;
   protocol: DownloadProtocol;
   age: number;
   ageHours: number;

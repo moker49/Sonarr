@@ -74,6 +74,7 @@ namespace NzbDrone.App.Test
             _container.GetRequiredService<ISeriesService>().Should().NotBeNull();
             _container.GetRequiredService<IVersionEpisodeFileAssignmentService>().Should().NotBeNull();
             _container.GetRequiredService<IEpisodeVersionResolver>().Should().NotBeNull();
+            _container.GetRequiredService<ISeriesVersionStatusService>().Should().NotBeNull();
             _container.GetRequiredService<ISeriesVersionAssignmentPlanner>().Should().NotBeNull();
             _container.GetRequiredService<IEpisodeDownloadReservationService>().Should().NotBeNull();
             _container.GetRequiredService<IEpisodeReservationRecoveryService>().Should().NotBeNull();

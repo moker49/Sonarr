@@ -17,6 +17,7 @@ export const episodeSection = 'releases.episode';
 export const seasonSection = 'releases.season';
 
 let abortCurrentRequest = null;
+let releaseFetchGeneration = 0;
 
 //
 // State
@@ -310,21 +311,33 @@ const fetchReleasesHelper = createFetchHandler(section, '/release');
 export const actionHandlers = handleThunks({
 
   [FETCH_RELEASES]: function(getState, payload, dispatch) {
-    const abortRequest = fetchReleasesHelper(getState, payload, dispatch);
+    const generation = ++releaseFetchGeneration;
+    if (abortCurrentRequest) {
+      abortCurrentRequest();
+    }
+
+    const abortRequest = fetchReleasesHelper(getState, payload, (action) => {
+      if (generation === releaseFetchGeneration) {
+        dispatch(action);
+      }
+    });
 
     abortCurrentRequest = abortRequest;
   },
 
   [CANCEL_FETCH_RELEASES]: function(getState, payload, dispatch) {
+    releaseFetchGeneration++;
     if (abortCurrentRequest) {
-      abortCurrentRequest = abortCurrentRequest();
+      abortCurrentRequest();
+      abortCurrentRequest = null;
     }
   },
 
   [GRAB_RELEASE]: function(getState, payload, dispatch) {
-    const guid = payload.guid;
+    const { guid, indexerId, seriesVersionId } = payload;
+    const identity = { guid, indexerId, seriesVersionId };
 
-    dispatch(updateRelease({ guid, isGrabbing: true }));
+    dispatch(updateRelease({ ...identity, isGrabbing: true }));
 
     const promise = createAjaxRequest({
       url: '/release',
@@ -336,7 +349,7 @@ export const actionHandlers = handleThunks({
 
     promise.done((data) => {
       dispatch(updateRelease({
-        guid,
+        ...identity,
         isGrabbing: false,
         isGrabbed: true,
         grabError: null
@@ -347,7 +360,7 @@ export const actionHandlers = handleThunks({
       const grabError = xhr.responseJSON && xhr.responseJSON.message || 'Failed to add to download queue';
 
       dispatch(updateRelease({
-        guid,
+        ...identity,
         isGrabbing: false,
         isGrabbed: false,
         grabError
@@ -372,10 +385,11 @@ export const reducers = createHandleActions({
   },
 
   [UPDATE_RELEASE]: (state, { payload }) => {
-    const guid = payload.guid;
+    const { guid, indexerId, seriesVersionId } = payload;
     const newState = Object.assign({}, state);
     const items = newState.items;
-    const index = items.findIndex((item) => item.guid === guid);
+    const index = items.findIndex((item) => item.guid === guid && item.indexerId === indexerId &&
+      (item.seriesVersionId ?? null) === (seriesVersionId ?? null));
 
     // Don't try to update if there isnt a matching item (the user closed the modal)
 

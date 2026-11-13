@@ -31,6 +31,7 @@ import MonitoringOptionsModal from 'Series/MonitoringOptions/MonitoringOptionsMo
 import SeriesGenres from 'Series/SeriesGenres';
 import SeriesPoster from 'Series/SeriesPoster';
 import { getSeriesStatusDetails } from 'Series/SeriesStatus';
+import SeriesVersionsModal from 'Series/Versions/SeriesVersionsModal';
 import QualityProfileNameConnector from 'Settings/Profiles/Quality/QualityProfileNameConnector';
 import fonts from 'Styles/Variables/fonts';
 import formatBytes from 'Utilities/Number/formatBytes';
@@ -77,6 +78,7 @@ class SeriesDetails extends Component {
       isManageEpisodesOpen: false,
       isEditSeriesModalOpen: false,
       isConversionModalOpen: false,
+      isVersionsModalOpen: false,
       isDeleteSeriesModalOpen: false,
       isSeriesHistoryModalOpen: false,
       isMonitorOptionsModalOpen: false,
@@ -117,6 +119,10 @@ class SeriesDetails extends Component {
   onConversionPress = () => this.setState({ isConversionModalOpen: true });
 
   onConversionClose = () => this.setState({ isConversionModalOpen: false });
+
+  onVersionsPress = () => this.setState({ isVersionsModalOpen: true });
+
+  onVersionsClose = () => this.setState({ isVersionsModalOpen: false });
 
   onDeleteSeriesPress = () => {
     this.setState({
@@ -227,6 +233,7 @@ class SeriesDetails extends Component {
       isManageEpisodesOpen,
       isEditSeriesModalOpen,
       isConversionModalOpen,
+      isVersionsModalOpen,
       isDeleteSeriesModalOpen,
       isSeriesHistoryModalOpen,
       isMonitorOptionsModalOpen,
@@ -325,6 +332,12 @@ class SeriesDetails extends Component {
               label={translate('ConvertSeriesProfile')}
               iconName={icons.PROFILE}
               onPress={this.onConversionPress}
+            />
+
+            <PageToolbarButton
+              label={translate('SeriesVersionsTitle')}
+              iconName={icons.INTERACTIVE}
+              onPress={this.onVersionsPress}
             />
 
           </PageToolbarSection>
@@ -742,6 +755,14 @@ class SeriesDetails extends Component {
                 qualityProfileId={qualityProfileId}
                 hasEpisodeFiles={hasEpisodeFiles}
                 onModalClose={this.onConversionClose}
+              />
+          }
+
+          {
+            isVersionsModalOpen &&
+              <SeriesVersionsModal
+                seriesId={id}
+                onModalClose={this.onVersionsClose}
               />
           }
 

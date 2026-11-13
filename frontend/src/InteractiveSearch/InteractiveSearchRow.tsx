@@ -79,6 +79,7 @@ function InteractiveSearchRow(props: InteractiveSearchRowProps) {
   const {
     guid,
     indexerId,
+    seriesVersionId,
     protocol,
     age,
     ageHours,
@@ -127,6 +128,7 @@ function InteractiveSearchRow(props: InteractiveSearchRowProps) {
       onGrabPress({
         guid,
         indexerId,
+        seriesVersionId,
       });
 
       return;
@@ -136,6 +138,7 @@ function InteractiveSearchRow(props: InteractiveSearchRowProps) {
   }, [
     guid,
     indexerId,
+    seriesVersionId,
     downloadAllowed,
     onGrabPress,
     setIsConfirmGrabModalOpen,
@@ -148,8 +151,16 @@ function InteractiveSearchRow(props: InteractiveSearchRowProps) {
       guid,
       indexerId,
       ...searchPayload,
+      seriesVersionId,
     });
-  }, [guid, indexerId, searchPayload, onGrabPress, setIsConfirmGrabModalOpen]);
+  }, [
+    guid,
+    indexerId,
+    seriesVersionId,
+    searchPayload,
+    onGrabPress,
+    setIsConfirmGrabModalOpen,
+  ]);
 
   const onGrabCancel = useCallback(() => {
     setIsConfirmGrabModalOpen(false);
@@ -265,6 +276,7 @@ function InteractiveSearchRow(props: InteractiveSearchRowProps) {
         <Link
           className={styles.manualDownloadContent}
           title={translate('OverrideAndAddToDownloadQueue')}
+          isDisabled={seriesVersionId != null}
           onPress={onOverridePress}
         >
           <div className={styles.manualDownloadContent}>
