@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$Destination,
+    [string]$Destination = '\\server\Server\docker\sonarr49',
     [string]$ImageTag = 'sonarr-composite:local',
     [string]$DockerContext
 )

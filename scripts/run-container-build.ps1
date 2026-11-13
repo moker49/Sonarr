@@ -8,10 +8,6 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($ToServer -and [string]::IsNullOrWhiteSpace($Destination)) {
-    Write-Error 'Supply -Destination with the server deployment directory.'
-    exit 1
-}
 if (-not $ToServer -and $Destination) {
     Write-Error '-Destination requires -ToServer.'
     exit 1

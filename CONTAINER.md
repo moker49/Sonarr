@@ -9,10 +9,10 @@ From this checkout, with Docker Desktop's Linux engine running:
 .\scripts\build-container.bat
 ```
 
-To build and transfer the bundle to a server, specify the destination explicitly:
+To build and transfer the bundle to `\\server\Server\docker\sonarr49`:
 
 ```powershell
-.\scripts\build-container-to-server.bat -Destination "\\server\Server\docker\sonarr"
+.\scripts\build-container-to-server.bat
 ```
 
 The server helper checks destination access first, stages and verifies the files,
@@ -20,7 +20,8 @@ publishes them, then removes the transferred local copies. It preserves an exist
 server `.env` and retains local outputs on failure. Both batch launchers keep their
 windows open and save timestamped logs in `_artifacts/build-logs/`.
 
-Optional arguments include `-ImageTag` and `-DockerContext`. Local export also accepts
+Pass `-Destination` to override the server directory. Other optional arguments include
+`-ImageTag` and `-DockerContext`. Local export also accepts
 `-OutputDirectory`. For example:
 
 ```powershell

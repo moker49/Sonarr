@@ -9,7 +9,7 @@ checkout from their own location.
 | `build-frontend.bat` | Install locked dependencies and build the UI into `_output/UI/` |
 | `start-sonarr-dev.bat` | Start Sonarr and the frontend watcher, then open port 8989 in the browser |
 | `build-container.bat` | Build and export the Linux amd64 deployment bundle |
-| `build-container-to-server.bat` | Build and transfer the bundle to an explicit `-Destination` |
+| `build-container-to-server.bat` | Build and transfer the bundle to `\\server\Server\docker\sonarr49` |
 | `run-container.bat` | Run on the destination alongside the exported archive, Compose file, and `.env` |
 | `run-container-build.ps1` | Shared build launcher with timestamped logs |
 
@@ -42,9 +42,10 @@ and watcher windows to stop them. It does not configure clients or import a libr
 
 ```powershell
 .\scripts\build-container.bat
-.\scripts\build-container-to-server.bat -Destination "\\server\Server\docker\sonarr"
+.\scripts\build-container-to-server.bat
 ```
 
 See [CONTAINER.md](../CONTAINER.md) for build/export options and
 [CONTAINER_DEPLOY.md](../CONTAINER_DEPLOY.md) for destination setup. The server
-destination is required; no Radarr deployment directory is reused.
+destination defaults to `\\server\Server\docker\sonarr49`. Pass `-Destination` to
+override it; no Radarr deployment directory is reused.
