@@ -15,24 +15,45 @@ namespace NzbDrone.Core.IndexerSearch
         private readonly IEpisodeService _episodeService;
         private readonly ISearchForReleases _releaseSearchService;
         private readonly IProcessDownloadDecisions _processDownloadDecisions;
+        private readonly IManagedEpisodeSearchService _managedSearch;
         private readonly Logger _logger;
 
         public SeriesSearchService(ISeriesService seriesService,
                                    IEpisodeService episodeService,
                                    ISearchForReleases releaseSearchService,
                                    IProcessDownloadDecisions processDownloadDecisions,
+                                   IManagedEpisodeSearchService managedSearch,
                                    Logger logger)
         {
             _seriesService = seriesService;
             _episodeService = episodeService;
             _releaseSearchService = releaseSearchService;
             _processDownloadDecisions = processDownloadDecisions;
+            _managedSearch = managedSearch;
             _logger = logger;
         }
 
         public void Execute(SeriesSearchCommand message)
         {
             var series = _seriesService.GetSeries(message.SeriesId);
+            if (_managedSearch.IsManagedSeries(message.SeriesId))
+            {
+                var monitoredSeasons = series.Seasons.Where(s => s.Monitored).OrderBy(s => s.SeasonNumber).ToList();
+                if (monitoredSeasons.Count == 0)
+                {
+                    _managedSearch.SearchMissing(message.SeriesId, true, message.Trigger == CommandTrigger.Manual).GetAwaiter().GetResult();
+                }
+                else
+                {
+                    foreach (var season in monitoredSeasons)
+                    {
+                        _managedSearch.SearchMissing(message.SeriesId, true, message.Trigger == CommandTrigger.Manual, season.SeasonNumber).GetAwaiter().GetResult();
+                    }
+                }
+
+                return;
+            }
+
             var downloadedCount = 0;
             var userInvokedSearch = message.Trigger == CommandTrigger.Manual;
 

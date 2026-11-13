@@ -27,8 +27,7 @@ namespace NzbDrone.Core.IndexerSearch
         List<WantedEpisodeVersion> CutoffUnmet(int? seriesId, bool monitored, bool includeSpecials);
     }
 
-    // This is a read-only selection primitive. It is not dispatched until
-    // release decisions and the import pipeline carry the same version identity.
+    // Read-only selection for wanted episode versions and search dispatch.
     public class ManagedEpisodeWantedService : IManagedEpisodeWantedService
     {
         private readonly IMainDatabase _database;

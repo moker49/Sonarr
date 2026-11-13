@@ -42,6 +42,33 @@ namespace NzbDrone.Core.Test.IndexerSearchTests
         }
 
         [Test]
+        public void composite_series_search_preserves_monitored_season_selection()
+        {
+            _series.Seasons = new List<Season>
+            {
+                new Season { SeasonNumber = 1, Monitored = false },
+                new Season { SeasonNumber = 2, Monitored = true }
+            };
+            Mocker.GetMock<IManagedEpisodeSearchService>().Setup(s => s.IsManagedSeries(_series.Id)).Returns(true);
+            Mocker.GetMock<IManagedEpisodeSearchService>().Setup(s => s.SearchMissing(_series.Id, true, true, 2)).ReturnsAsync(0);
+
+            Subject.Execute(new SeriesSearchCommand(_series.Id) { Trigger = CommandTrigger.Manual });
+
+            Mocker.GetMock<IManagedEpisodeSearchService>().Verify(s => s.SearchMissing(_series.Id, true, true, 2), Times.Once());
+            Mocker.GetMock<IManagedEpisodeSearchService>().Verify(s => s.SearchMissing(_series.Id, true, true, 1), Times.Never());
+            Mocker.GetMock<ISearchForReleases>().Verify(s => s.SeasonSearch(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()), Times.Never());
+        }
+
+        [Test]
+        public void composite_series_without_monitored_seasons_searches_monitored_episode_slots()
+        {
+            Mocker.GetMock<IManagedEpisodeSearchService>().Setup(s => s.IsManagedSeries(_series.Id)).Returns(true);
+            Mocker.GetMock<IManagedEpisodeSearchService>().Setup(s => s.SearchMissing(_series.Id, true, false, null)).ReturnsAsync(0);
+            Subject.Execute(new SeriesSearchCommand(_series.Id));
+            Mocker.GetMock<IManagedEpisodeSearchService>().Verify(s => s.SearchMissing(_series.Id, true, false, null), Times.Once());
+        }
+
+        [Test]
         public void should_only_include_monitored_seasons()
         {
             _series.Seasons = new List<Season>

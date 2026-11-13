@@ -23,6 +23,7 @@ namespace NzbDrone.Core.IndexerSearch
         private readonly IEpisodeService _episodeService;
         private readonly IEpisodeCutoffService _episodeCutoffService;
         private readonly IQueueService _queueService;
+        private readonly IManagedEpisodeSearchService _managedSearch;
         private readonly Logger _logger;
 
         public EpisodeSearchService(ISearchForReleases releaseSearchService,
@@ -30,6 +31,7 @@ namespace NzbDrone.Core.IndexerSearch
                                     IEpisodeService episodeService,
                                     IEpisodeCutoffService episodeCutoffService,
                                     IQueueService queueService,
+                                    IManagedEpisodeSearchService managedSearch,
                                     Logger logger)
         {
             _releaseSearchService = releaseSearchService;
@@ -37,6 +39,7 @@ namespace NzbDrone.Core.IndexerSearch
             _episodeService = episodeService;
             _episodeCutoffService = episodeCutoffService;
             _queueService = queueService;
+            _managedSearch = managedSearch;
             _logger = logger;
         }
 
@@ -48,6 +51,13 @@ namespace NzbDrone.Core.IndexerSearch
 
             foreach (var series in episodes.GroupBy(e => e.SeriesId))
             {
+                // Composite series must never fall back to legacy primary-file
+                // filtering or dispatch without an explicit version identity.
+                if (_managedSearch.IsManagedSeries(series.Key))
+                {
+                    continue;
+                }
+
                 foreach (var season in series.Select(e => e).GroupBy(e => e.SeasonNumber))
                 {
                     groups.Add(new EpisodeSearchGroup
@@ -123,6 +133,12 @@ namespace NzbDrone.Core.IndexerSearch
         public void Execute(MissingEpisodeSearchCommand message)
         {
             var monitored = message.Monitored;
+            var userInvokedSearch = message.Trigger == CommandTrigger.Manual;
+            if (message.SeriesId.HasValue && _managedSearch.IsManagedSeries(message.SeriesId.Value))
+            {
+                _managedSearch.SearchMissing(message.SeriesId, monitored, userInvokedSearch).GetAwaiter().GetResult();
+                return;
+            }
             List<Episode> episodes;
 
             if (message.SeriesId.HasValue)
@@ -159,7 +175,11 @@ namespace NzbDrone.Core.IndexerSearch
             var queue = _queueService.GetQueue().Where(q => q.Episode != null).Select(q => q.Episode.Id);
             var missing = episodes.Where(e => !queue.Contains(e.Id)).ToList();
 
-            SearchForBulkEpisodes(missing, monitored, message.Trigger == CommandTrigger.Manual).GetAwaiter().GetResult();
+            SearchForBulkEpisodes(missing, monitored, userInvokedSearch).GetAwaiter().GetResult();
+            if (!message.SeriesId.HasValue)
+            {
+                _managedSearch.SearchMissing(null, monitored, userInvokedSearch).GetAwaiter().GetResult();
+            }
         }
 
         public void Execute(CutoffUnmetEpisodeSearchCommand message)

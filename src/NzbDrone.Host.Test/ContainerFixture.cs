@@ -79,6 +79,7 @@ namespace NzbDrone.App.Test
             _container.GetRequiredService<IEpisodeDownloadReservationService>().Should().NotBeNull();
             _container.GetRequiredService<IEpisodeReservationRecoveryService>().Should().NotBeNull();
             _container.GetRequiredService<IManagedEpisodeWantedService>().Should().NotBeNull();
+            _container.GetRequiredService<IManagedEpisodeSearchService>().Should().NotBeNull();
             _container.GetRequiredService<IEpisodeVersionDecisionContext>().Should().NotBeNull();
         }
 

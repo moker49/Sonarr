@@ -9,19 +9,28 @@ namespace NzbDrone.Core.IndexerSearch
     {
         private readonly ISearchForReleases _releaseSearchService;
         private readonly IProcessDownloadDecisions _processDownloadDecisions;
+        private readonly IManagedEpisodeSearchService _managedSearch;
         private readonly Logger _logger;
 
         public SeasonSearchService(ISearchForReleases releaseSearchService,
                                    IProcessDownloadDecisions processDownloadDecisions,
+                                   IManagedEpisodeSearchService managedSearch,
                                    Logger logger)
         {
             _releaseSearchService = releaseSearchService;
             _processDownloadDecisions = processDownloadDecisions;
+            _managedSearch = managedSearch;
             _logger = logger;
         }
 
         public void Execute(SeasonSearchCommand message)
         {
+            if (_managedSearch.IsManagedSeries(message.SeriesId))
+            {
+                _managedSearch.SearchMissing(message.SeriesId, true, message.Trigger == CommandTrigger.Manual, message.SeasonNumber).GetAwaiter().GetResult();
+                return;
+            }
+
             var decisions = _releaseSearchService.SeasonSearch(message.SeriesId, message.SeasonNumber, false, true, message.Trigger == CommandTrigger.Manual, false).GetAwaiter().GetResult();
             var processed = _processDownloadDecisions.ProcessDecisions(decisions).GetAwaiter().GetResult();
 
