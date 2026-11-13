@@ -37,9 +37,9 @@ if errorlevel 1 (
 
 echo Starting frontend watcher and Sonarr...
 start "Sonarr frontend watcher" cmd /k "node_modules\.bin\webpack.cmd --watch --config frontend\build\webpack.config.js"
-start "Sonarr development" /D "%CD%\_output\dev" "%CD%\_output\dev\Sonarr.Console.exe" "/data=%CD%\_devdata" /nobrowser
+start "Sonarr development" /D "%CD%\_output\dev" cmd /k ""%CD%\_output\dev\Sonarr.Console.exe" "/data=%CD%\_devdata" /nobrowser"
 echo Waiting for Sonarr on http://localhost:8989 ...
-powershell -NoProfile -Command "$ready = $false; for ($i = 0; $i -lt 60; $i++) { try { $r = Invoke-WebRequest 'http://localhost:8989' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ready = $true; break } } catch {}; Start-Sleep -Seconds 1 }; if ($ready) { Start-Process 'http://localhost:8989' } else { Write-Host 'Sonarr did not respond. Check the Sonarr development window.'; exit 1 }"
+powershell -NoProfile -Command "$ready = $false; for ($i = 0; $i -lt 60; $i++) { try { $r = Invoke-WebRequest 'http://localhost:8989' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ready = $true; break } } catch {}; Start-Sleep -Seconds 1 }; if ($ready) { Start-Process 'http://localhost:8989' } else { Write-Host 'Sonarr did not respond. Check the Sonarr development window and _devdata\logs\sonarr.txt.'; exit 1 }"
 if errorlevel 1 goto failed
 echo Sonarr is ready. Close the Sonarr and frontend watcher windows to stop it.
 exit /b 0

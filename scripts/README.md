@@ -27,7 +27,9 @@ installation uses Corepack and Yarn. Install the .NET 6 runtime to run the built
 ```
 
 The backend helper skips analyzers for local builds and leaves package advisory
-warnings visible. Build helpers pause at the end; pass `--no-pause` for automation.
+warnings visible. It builds Windows platform dependencies separately and copies only
+the platform assembly into the console host's runtime directory. Build helpers pause
+at the end; pass `--no-pause` for automation.
 The frontend helper accepts `--no-install` to reuse installed dependencies:
 
 ```powershell
