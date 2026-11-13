@@ -27,6 +27,7 @@ namespace NzbDrone.Core.Parser.Model
         public ReleaseSourceType ReleaseSource { get; set; }
         public int? SeriesVersionId { get; set; }
         public string SeriesVersionLabel { get; set; }
+        public int? SeriesVersionPriority { get; set; }
 
         public RemoteEpisode()
         {

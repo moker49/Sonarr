@@ -135,17 +135,91 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
         }
 
         [Test]
-        public void rss_rejects_composite_series_until_versioned_dispatch_is_ready()
+        public void unscoped_interactive_search_requires_an_explicit_version()
         {
             _remoteEpisode.Series.QualityProfileId = 10;
             Mocker.GetMock<ICompositeProfileDraftService>().Setup(c => c.GetProfileIds()).Returns(new HashSet<int> { 10 });
             GivenSpecifications(_pass1);
 
-            var decision = Subject.GetRssDecision(_reports).Single();
+            var decision = Subject.GetSearchDecision(_reports, new SingleEpisodeSearchCriteria()).Single();
 
             decision.Approved.Should().BeFalse();
             decision.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.VersionedDownloadsNotReady);
             _pass1.Verify(c => c.IsSatisfiedBy(It.IsAny<RemoteEpisode>(), It.IsAny<SearchCriteriaBase>()), Times.Never());
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void rss_and_pushed_releases_evaluate_each_child_and_reject_only_occupied_slots(bool pushed)
+        {
+            _remoteEpisode.Series.QualityProfileId = 10;
+            Mocker.GetMock<ICompositeProfileDraftService>().Setup(c => c.GetProfileIds()).Returns(new HashSet<int> { 10 });
+            var empty = new RemoteEpisode { Series = new Series { QualityProfileId = 20 }, Episodes = new List<Episode> { new Episode() }, Release = _reports[0], SeriesVersionId = 7 };
+            var occupied = new RemoteEpisode { Series = new Series { QualityProfileId = 30 }, Episodes = new List<Episode> { new Episode { EpisodeFileId = 99 } }, Release = _reports[0], SeriesVersionId = 8 };
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(c => c.ForAllVersions(_remoteEpisode)).Returns(new List<RemoteEpisode> { empty, occupied });
+            GivenSpecifications(_pass1);
+
+            var decisions = Subject.GetRssDecision(_reports, pushed);
+
+            decisions.Should().HaveCount(2);
+            decisions[0].Approved.Should().BeTrue();
+            decisions[0].RemoteEpisode.Should().BeSameAs(empty);
+            decisions[1].Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.VersionReplacementNotReady);
+            decisions.Should().OnlyContain(d => d.RemoteEpisode.ReleaseSource == (pushed ? ReleaseSourceType.ReleasePush : ReleaseSourceType.Rss));
+            _pass1.Verify(c => c.IsSatisfiedBy(empty, null), Times.Once());
+            _pass1.Verify(c => c.IsSatisfiedBy(occupied, null), Times.Once());
+            _pass1.Verify(c => c.IsSatisfiedBy(_remoteEpisode, null), Times.Never());
+        }
+
+        [Test]
+        public void rss_expansion_failure_does_not_fall_back_to_an_ordinary_grab()
+        {
+            _remoteEpisode.Series.QualityProfileId = 10;
+            Mocker.GetMock<ICompositeProfileDraftService>().Setup(c => c.GetProfileIds()).Returns(new HashSet<int> { 10 });
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(c => c.ForAllVersions(_remoteEpisode)).Returns(new List<RemoteEpisode>());
+            GivenSpecifications(_pass1);
+            var decisions = Subject.GetRssDecision(_reports);
+            decisions.Should().ContainSingle().Which.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.Error);
+            _pass1.Verify(c => c.IsSatisfiedBy(It.IsAny<RemoteEpisode>(), null), Times.Never());
+            ExceptionVerification.ExpectedErrors(1);
+        }
+
+        [Test]
+        public void pending_release_retries_only_its_original_version()
+        {
+            _remoteEpisode.Series.QualityProfileId = 10;
+            _reports[0].PendingSeriesVersionId = 8;
+            Mocker.GetMock<ICompositeProfileDraftService>().Setup(c => c.GetProfileIds()).Returns(new HashSet<int> { 10 });
+            var context = new RemoteEpisode { Series = new Series { QualityProfileId = 30 }, Episodes = new List<Episode> { new Episode() }, Release = _reports[0], SeriesVersionId = 8 };
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(c => c.ForVersion(_remoteEpisode, 8)).Returns(context);
+            GivenSpecifications(_pass1);
+            var decisions = Subject.GetRssDecision(_reports);
+            decisions.Should().ContainSingle().Which.RemoteEpisode.SeriesVersionId.Should().Be(8);
+            decisions[0].Approved.Should().BeTrue();
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Verify(c => c.ForAllVersions(It.IsAny<RemoteEpisode>()), Times.Never());
+        }
+
+        [Test]
+        public void pending_release_cannot_fall_back_to_an_ordinary_profile_after_conversion_changes()
+        {
+            _reports[0].PendingSeriesVersionId = 8;
+            Mocker.GetMock<ICompositeProfileDraftService>().Setup(c => c.GetProfileIds()).Returns(new HashSet<int>());
+            GivenSpecifications(_pass1);
+            var decisions = Subject.GetRssDecision(_reports);
+            decisions.Should().ContainSingle().Which.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.Error);
+            _pass1.Verify(c => c.IsSatisfiedBy(It.IsAny<RemoteEpisode>(), null), Times.Never());
+            ExceptionVerification.ExpectedErrors(1);
+        }
+
+        [Test]
+        public void final_mapped_version_decision_also_rejects_occupied_slots()
+        {
+            _remoteEpisode.SeriesVersionId = 7;
+            _remoteEpisode.Release = _reports[0];
+            _remoteEpisode.Episodes[0].EpisodeFileId = 99;
+            GivenSpecifications(_pass1);
+            var decision = Subject.GetMappedDecision(_remoteEpisode);
+            decision.Rejections.Should().ContainSingle(r => r.Reason == DownloadRejectionReason.VersionReplacementNotReady);
         }
 
         [Test]

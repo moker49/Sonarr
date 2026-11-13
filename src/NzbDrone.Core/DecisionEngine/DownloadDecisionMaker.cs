@@ -85,6 +85,7 @@ namespace NzbDrone.Core.DecisionEngine
             foreach (var report in reports)
             {
                 DownloadDecision decision = null;
+                List<DownloadDecision> versionDecisions = null;
                 _logger.ProgressTrace("Processing release {0}/{1}", reportNumber, reports.Count);
                 _logger.Debug("Processing release '{0}' from '{1}'", report.Title, report.Indexer);
 
@@ -124,12 +125,41 @@ namespace NzbDrone.Core.DecisionEngine
                         {
                             decision = new DownloadDecision(remoteEpisode, new DownloadRejection(DownloadRejectionReason.UnknownEpisode, "Unable to identify correct episode(s) using release name and scene mappings"));
                         }
+                        else if (report.PendingSeriesVersionId.HasValue)
+                        {
+                            compositeIds ??= _composites.GetProfileIds() ?? throw new InvalidOperationException("Composite profile information is unavailable.");
+                            if (searchCriteria != null || !compositeIds.Contains(remoteEpisode.Series.QualityProfileId))
+                            {
+                                throw new InvalidOperationException("The pending release's composite profile changed.");
+                            }
+
+                            var context = _versionContexts.ForVersion(remoteEpisode, report.PendingSeriesVersionId.Value);
+                            if (context?.SeriesVersionId != report.PendingSeriesVersionId)
+                            {
+                                throw new InvalidOperationException("The pending release's version could not be restored.");
+                            }
+
+                            decision = EvaluateMappedEpisode(context, report, null);
+                        }
                         else if (searchCriteria?.SeriesVersionId == null)
                         {
                             compositeIds ??= _composites.GetProfileIds() ?? throw new InvalidOperationException("Composite profile information is unavailable.");
                             if (compositeIds.Contains(remoteEpisode.Series.QualityProfileId))
                             {
-                                decision = new DownloadDecision(remoteEpisode, new DownloadRejection(DownloadRejectionReason.VersionedDownloadsNotReady, "Version-aware download processing is not yet available."));
+                                if (searchCriteria == null)
+                                {
+                                    var contexts = _versionContexts.ForAllVersions(remoteEpisode);
+                                    if (contexts == null || contexts.Count != 2 || contexts.Any(c => c?.SeriesVersionId == null || c.SeriesVersionId <= 0) || contexts.Select(c => c.SeriesVersionId).Distinct().Count() != 2)
+                                    {
+                                        throw new InvalidOperationException("Composite release contexts are unavailable.");
+                                    }
+
+                                    versionDecisions = contexts.Select(context => EvaluateMappedEpisode(context, report, null)).ToList();
+                                }
+                                else
+                                {
+                                    decision = new DownloadDecision(remoteEpisode, new DownloadRejection(DownloadRejectionReason.VersionedDownloadsNotReady, "Select a series version before searching this composite profile."));
+                                }
                             }
                             else
                             {
@@ -153,13 +183,6 @@ namespace NzbDrone.Core.DecisionEngine
                             }
 
                             decision = EvaluateMappedEpisode(remoteEpisode, report, searchCriteria);
-                            if (searchCriteria.SeriesVersionId.HasValue && remoteEpisode.Episodes.Any(e => e.EpisodeFileId != 0))
-                            {
-                                decision = new DownloadDecision(remoteEpisode, decision.Rejections.Concat(new[]
-                                {
-                                    new DownloadRejection(DownloadRejectionReason.VersionReplacementNotReady, "Version replacement downloads are not yet available; all episode slots must be empty.")
-                                }).ToArray());
-                            }
                         }
                     }
 
@@ -189,6 +212,7 @@ namespace NzbDrone.Core.DecisionEngine
                 }
                 catch (Exception e)
                 {
+                    versionDecisions = null;
                     _logger.Error(e, "Couldn't process release.");
 
                     var remoteEpisode = new RemoteEpisode { Release = report };
@@ -197,7 +221,7 @@ namespace NzbDrone.Core.DecisionEngine
 
                 reportNumber++;
 
-                if (decision != null)
+                foreach (var result in versionDecisions ?? (decision == null ? new List<DownloadDecision>() : new List<DownloadDecision> { decision }))
                 {
                     var source = pushedRelease ? ReleaseSourceType.ReleasePush : ReleaseSourceType.Rss;
 
@@ -217,18 +241,18 @@ namespace NzbDrone.Core.DecisionEngine
                         }
                     }
 
-                    decision.RemoteEpisode.ReleaseSource = source;
+                    result.RemoteEpisode.ReleaseSource = source;
 
-                    if (decision.Rejections.Any())
+                    if (result.Rejections.Any())
                     {
-                        _logger.Debug("Release '{0}' from '{1}' rejected for the following reasons: {2}", report.Title, report.Indexer, string.Join(", ", decision.Rejections));
+                        _logger.Debug("Release '{0}' from '{1}' rejected for the following reasons: {2}", report.Title, report.Indexer, string.Join(", ", result.Rejections));
                     }
                     else
                     {
                         _logger.Debug("Release '{0}' from '{1}' accepted", report.Title, report.Indexer);
                     }
 
-                    yield return decision;
+                    yield return result;
                 }
             }
         }
@@ -240,7 +264,16 @@ namespace NzbDrone.Core.DecisionEngine
             remoteEpisode.CustomFormatScore = remoteEpisode?.Series?.QualityProfile?.Value.CalculateCustomFormatScore(remoteEpisode.CustomFormats) ?? 0;
             _logger.Trace("Custom Format Score of '{0}' [{1}] calculated for '{2}'", remoteEpisode.CustomFormatScore, remoteEpisode.CustomFormats?.ConcatToString(), report.Title);
             remoteEpisode.DownloadAllowed = remoteEpisode.Episodes.Any();
-            return GetDecisionForReport(remoteEpisode, searchCriteria);
+            var decision = GetDecisionForReport(remoteEpisode, searchCriteria);
+            if (remoteEpisode.SeriesVersionId.HasValue && remoteEpisode.Episodes.Any(e => e.EpisodeFileId != 0))
+            {
+                decision = new DownloadDecision(remoteEpisode, decision.Rejections.Concat(new[]
+                {
+                    new DownloadRejection(DownloadRejectionReason.VersionReplacementNotReady, "Version replacement downloads are not yet available; all episode slots must be empty.")
+                }).ToArray());
+            }
+
+            return decision;
         }
 
         private DownloadDecision GetDecisionForReport(RemoteEpisode remoteEpisode, SearchCriteriaBase searchCriteria = null)

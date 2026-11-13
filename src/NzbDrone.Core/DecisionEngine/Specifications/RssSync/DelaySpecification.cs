@@ -93,7 +93,7 @@ namespace NzbDrone.Core.DecisionEngine.Specifications.RssSync
 
             var episodeIds = subject.Episodes.Select(e => e.Id);
 
-            var oldest = _pendingReleaseService.OldestPendingRelease(subject.Series.Id, episodeIds.ToArray());
+            var oldest = _pendingReleaseService.OldestPendingRelease(subject.Series.Id, episodeIds.ToArray(), subject.SeriesVersionId);
 
             if (oldest != null && oldest.Release.AgeMinutes > delay)
             {

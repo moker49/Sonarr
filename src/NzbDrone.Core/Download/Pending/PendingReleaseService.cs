@@ -30,7 +30,7 @@ namespace NzbDrone.Core.Download.Pending
         List<Queue.Queue> GetPendingQueue();
         Queue.Queue FindPendingQueueItem(int queueId);
         void RemovePendingQueueItems(int queueId);
-        RemoteEpisode OldestPendingRelease(int seriesId, int[] episodeIds);
+        RemoteEpisode OldestPendingRelease(int seriesId, int[] episodeIds, int? seriesVersionId = null);
     }
 
     public class PendingReleaseService : IPendingReleaseService,
@@ -160,16 +160,7 @@ namespace NzbDrone.Core.Download.Pending
 
         public List<ReleaseInfo> GetPending()
         {
-            // Versioned pending candidates remain stored until their decision,
-            // history, and dispatch paths are fully version-aware.
-            var releases = _repository.All().Where(p => !p.SeriesVersionId.HasValue).Select(p =>
-            {
-                var release = p.Release;
-
-                release.PendingReleaseReason = p.Reason;
-
-                return release;
-            }).ToList();
+            var releases = _repository.All().Select(p => p.Release.CloneForPending(p.SeriesVersionId, p.Reason)).ToList();
 
             if (releases.Any())
             {
@@ -244,11 +235,11 @@ namespace NzbDrone.Core.Download.Pending
             _repository.DeleteMany(releasesToRemove.Select(c => c.Id));
         }
 
-        public RemoteEpisode OldestPendingRelease(int seriesId, int[] episodeIds)
+        public RemoteEpisode OldestPendingRelease(int seriesId, int[] episodeIds, int? seriesVersionId = null)
         {
             var seriesReleases = GetPendingReleases(seriesId);
 
-            return seriesReleases.Select(r => r.RemoteEpisode)
+            return seriesReleases.Where(r => r.SeriesVersionId == seriesVersionId).Select(r => r.RemoteEpisode)
                                  .Where(r => r.Episodes.Select(e => e.Id).Intersect(episodeIds).Any())
                                  .MaxBy(p => p.Release.AgeHours);
         }

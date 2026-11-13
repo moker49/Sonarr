@@ -85,6 +85,24 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
         }
 
         [Test]
+        public void ranks_each_version_within_its_child_profile_and_processes_definition_priority_first()
+        {
+            var primary = GivenRemoteEpisode(new List<Episode> { GivenEpisode(1) }, new QualityModel(Quality.HDTV720p), Language.English);
+            primary.SeriesVersionId = 8;
+            primary.SeriesVersionPriority = 0;
+            var secondary = GivenRemoteEpisode(new List<Episode> { GivenEpisode(1) }, new QualityModel(Quality.Bluray1080p), Language.English);
+            secondary.Series.Id = primary.Series.Id;
+            secondary.SeriesVersionId = 7;
+            secondary.SeriesVersionPriority = 1;
+            // A quality absent from this child's ordering must not be compared
+            // to a release using another child's quality ordering.
+            primary.Series.QualityProfile.Value.Items = new List<QualityProfileQualityItem> { new QualityProfileQualityItem { Quality = Quality.HDTV720p, Allowed = true } };
+            secondary.Series.QualityProfile.Value.Items = new List<QualityProfileQualityItem> { new QualityProfileQualityItem { Quality = Quality.Bluray1080p, Allowed = true } };
+            var decisions = new List<DownloadDecision> { new DownloadDecision(secondary), new DownloadDecision(primary) };
+            Subject.PrioritizeDecisions(decisions).Select(d => d.RemoteEpisode.SeriesVersionId).Should().Equal(8, 7);
+        }
+
+        [Test]
         public void should_put_reals_before_non_reals()
         {
             var remoteEpisode1 = GivenRemoteEpisode(new List<Episode> { GivenEpisode(1) }, new QualityModel(Quality.HDTV720p, new Revision(version: 1, real: 0)), Language.English);

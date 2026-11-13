@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FluentAssertions;
 using Moq;
 using NUnit.Framework;
@@ -39,6 +40,73 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             Mocker.GetMock<IEpisodeVersionResolver>().Setup(v => v.ResolveMany(It.IsAny<IReadOnlyCollection<int>>())).Returns(() => _versions);
             Mocker.GetMock<IQualityProfileService>().Setup(p => p.Get(20)).Returns(new QualityProfile { Id = 20 });
             Mocker.GetMock<IMediaFileService>().Setup(f => f.GetFiles(It.IsAny<IEnumerable<int>>())).Returns(new List<EpisodeFile> { new EpisodeFile { Id = 100, SeriesId = 5 } });
+        }
+
+        [Test]
+        public void expands_both_child_contexts_from_one_snapshot_in_definition_priority_order()
+        {
+            GivenBothVersions();
+            var contexts = Subject.ForAllVersions(_source);
+
+            contexts.Select(c => c.SeriesVersionId).Should().Equal(8, 7);
+            contexts.Select(c => c.SeriesVersionPriority).Should().Equal(0, 1);
+            contexts.Select(c => c.Series.QualityProfileId).Should().Equal(30, 20);
+            contexts[0].Episodes.Should().OnlyContain(e => e.EpisodeFileId == 0);
+            contexts[1].Episodes[0].EpisodeFileId.Should().Be(100);
+            contexts[0].Episodes[0].Should().NotBeSameAs(contexts[1].Episodes[0]);
+            _source.Series.QualityProfileId.Should().Be(10);
+            _source.Episodes.Should().OnlyContain(e => e.EpisodeFileId == 200);
+            Mocker.GetMock<IEpisodeVersionResolver>().Verify(v => v.ResolveMany(It.IsAny<IReadOnlyCollection<int>>()), Times.Once());
+        }
+
+        private void GivenBothVersions()
+        {
+            foreach (var entry in _versions)
+            {
+                entry.Value[0].CompositeProfileVersionId = 70;
+                entry.Value[0].Priority = 1;
+                entry.Value.Add(new ResolvedEpisodeVersion
+                {
+                    EpisodeId = entry.Key, SeriesId = 5, SeriesVersionId = 8, CompositeProfileVersionId = 80,
+                    QualityProfileId = 30, ParentQualityProfileId = 10, Monitored = true, Label = "4K", Priority = 0, IsPrimary = true
+                });
+            }
+
+            Mocker.GetMock<IQualityProfileService>().Setup(p => p.Get(30)).Returns(new QualityProfile { Id = 30 });
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void rejects_incomplete_or_duplicate_version_coverage_before_returning_any_context(bool missing)
+        {
+            GivenBothVersions();
+            if (missing)
+            {
+                _versions[2].RemoveAt(1);
+            }
+            else
+            {
+                _versions[2][1].SeriesVersionId = 7;
+            }
+
+            Action expand = () => Subject.ForAllVersions(_source);
+            expand.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void expansion_rejects_changed_definition_metadata_across_a_pack()
+        {
+            GivenBothVersions();
+            _versions[2][0].Priority = 0;
+            Action expand = () => Subject.ForAllVersions(_source);
+            expand.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void expansion_rejects_an_ordinary_episode_context()
+        {
+            Action expand = () => Subject.ForAllVersions(_source);
+            expand.Should().Throw<InvalidOperationException>();
         }
 
         [Test]

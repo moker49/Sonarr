@@ -25,6 +25,29 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
         }
 
         [Test]
+        public void retry_metadata_is_isolated_for_versions_sharing_a_torrent_release()
+        {
+            var torrent = new TorrentInfo { IndexerId = 1, MagnetUrl = "magnet:test", InfoHash = "hash" };
+            Mocker.GetMock<IIndexerStatusService>().Setup(s => s.GetBlockedProviders()).Returns(new List<IndexerStatus>());
+            Mocker.GetMock<IPendingReleaseRepository>().Setup(s => s.All()).Returns(new List<PendingRelease>
+            {
+                new PendingRelease { Release = torrent, SeriesVersionId = 7, Reason = PendingReleaseReason.Delay },
+                new PendingRelease { Release = torrent, SeriesVersionId = 8, Reason = PendingReleaseReason.Fallback }
+            });
+
+            var releases = Subject.GetPending();
+            releases.Should().HaveCount(2);
+            releases[0].PendingSeriesVersionId.Should().Be(7);
+            releases[1].PendingSeriesVersionId.Should().Be(8);
+            releases[0].PendingReleaseReason.Should().Be(PendingReleaseReason.Delay);
+            releases[1].PendingReleaseReason.Should().Be(PendingReleaseReason.Fallback);
+            releases[0].Should().BeOfType<TorrentInfo>().Which.MagnetUrl.Should().Be(torrent.MagnetUrl);
+            releases[0].Should().NotBeSameAs(releases[1]);
+            torrent.PendingSeriesVersionId.Should().BeNull();
+            torrent.PendingReleaseReason.Should().BeNull();
+        }
+
+        [Test]
         public void should_not_ignore_pending_items_from_available_indexer()
         {
             Mocker.GetMock<IIndexerStatusService>()

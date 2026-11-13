@@ -83,6 +83,19 @@ namespace NzbDrone.Core.Test.DecisionEngineTests.RssSync
             };
         }
 
+        [Test]
+        public void delay_history_lookup_carries_the_requested_version()
+        {
+            _delayProfile.UsenetDelay = 60;
+            _delayProfile.BypassIfHighestQuality = false;
+            _delayProfile.BypassIfAboveCustomFormatScore = false;
+            _remoteEpisode.SeriesVersionId = 8;
+            _remoteEpisode.Release.PublishDate = DateTime.UtcNow;
+            _remoteEpisode.ParsedEpisodeInfo.Quality = new QualityModel(Quality.HDTV720p);
+            Subject.IsSatisfiedBy(_remoteEpisode, null);
+            Mocker.GetMock<IPendingReleaseService>().Verify(s => s.OldestPendingRelease(_remoteEpisode.Series.Id, It.IsAny<int[]>(), 8), Times.Once());
+        }
+
         private void GivenUpgradeForExistingFile()
         {
             Mocker.GetMock<IUpgradableSpecification>()

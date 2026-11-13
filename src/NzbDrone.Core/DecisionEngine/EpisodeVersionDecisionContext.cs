@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FluentValidation;
 using NzbDrone.Core.Datastore;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Parser.Model;
@@ -12,6 +13,7 @@ namespace NzbDrone.Core.DecisionEngine
     public interface IEpisodeVersionDecisionContext
     {
         RemoteEpisode ForVersion(RemoteEpisode source, int seriesVersionId);
+        List<RemoteEpisode> ForAllVersions(RemoteEpisode source);
     }
 
     // Constructs an isolated view for a release, including every episode in a
@@ -31,13 +33,55 @@ namespace NzbDrone.Core.DecisionEngine
 
         public RemoteEpisode ForVersion(RemoteEpisode source, int seriesVersionId)
         {
-            if (source?.Series == null || source.Series.Id <= 0 || source.Episodes == null || source.Episodes.Count == 0 || seriesVersionId <= 0 ||
+            ValidateSource(source);
+            if (seriesVersionId <= 0)
+            {
+                throw new ArgumentException("A positive series version ID is required.", nameof(seriesVersionId));
+            }
+
+            return CreateContext(source, seriesVersionId, _versions.ResolveMany(source.Episodes.Select(e => e.Id).ToArray()));
+        }
+
+        public List<RemoteEpisode> ForAllVersions(RemoteEpisode source)
+        {
+            ValidateSource(source);
+            var resolved = _versions.ResolveMany(source.Episodes.Select(e => e.Id).ToArray());
+            if (resolved == null || !resolved.TryGetValue(source.Episodes[0].Id, out var options) || options == null || options.Count != 2 ||
+                options.Any(v => !v.SeriesVersionId.HasValue || v.SeriesVersionId <= 0 || !v.CompositeProfileVersionId.HasValue || v.CompositeProfileVersionId <= 0) ||
+                options.Select(v => v.SeriesVersionId).Distinct().Count() != 2 ||
+                source.Episodes.Any(e => !resolved.TryGetValue(e.Id, out var rows) || rows == null || rows.Count != 2 ||
+                    !rows.Select(v => v.SeriesVersionId).ToHashSet().SetEquals(options.Select(v => v.SeriesVersionId))))
+            {
+                throw new InvalidOperationException("The release does not have two complete composite version contexts.");
+            }
+
+            new CompositeProfileValidator().ValidateAndThrow(options.Select(v => new CompositeProfileVersion
+            {
+                Id = v.CompositeProfileVersionId.Value,
+                QualityProfileId = v.QualityProfileId,
+                Label = v.Label,
+                Priority = v.Priority,
+                IsPrimary = v.IsPrimary
+            }).ToList());
+            return options.OrderBy(v => v.Priority).Select(v => CreateContext(source, v.SeriesVersionId.Value, resolved)).ToList();
+        }
+
+        private static void ValidateSource(RemoteEpisode source)
+        {
+            if (source?.Series == null || source.Series.Id <= 0 || source.Episodes == null || source.Episodes.Count == 0 ||
                 source.Episodes.Any(e => e == null || e.Id <= 0 || e.SeriesId != source.Series.Id) || source.Episodes.Select(e => e.Id).Distinct().Count() != source.Episodes.Count)
             {
                 throw new ArgumentException("The release must identify one series and a nonempty set of distinct episodes.");
             }
+        }
 
-            var resolved = _versions.ResolveMany(source.Episodes.Select(e => e.Id).ToArray());
+        private RemoteEpisode CreateContext(RemoteEpisode source, int seriesVersionId, Dictionary<int, List<ResolvedEpisodeVersion>> resolved)
+        {
+            if (resolved == null)
+            {
+                throw new InvalidOperationException("The episode versions could not be resolved.");
+            }
+
             var selections = new Dictionary<int, ResolvedEpisodeVersion>();
             foreach (var episode in source.Episodes)
             {
@@ -58,7 +102,8 @@ namespace NzbDrone.Core.DecisionEngine
 
             var profileIds = selections.Values.Select(v => v.QualityProfileId).Distinct().ToArray();
             var labels = selections.Values.Select(v => v.Label).Distinct(StringComparer.Ordinal).ToArray();
-            if (profileIds.Length != 1 || labels.Length != 1 || !CompositeProfileValidator.ValidLabel(labels[0]))
+            if (profileIds.Length != 1 || labels.Length != 1 || !CompositeProfileValidator.ValidLabel(labels[0]) ||
+                selections.Values.Select(v => (v.CompositeProfileVersionId, v.Priority, v.IsPrimary)).Distinct().Count() != 1)
             {
                 throw new InvalidOperationException("The version resolves to conflicting quality profiles or invalid labels.");
             }
@@ -84,6 +129,7 @@ namespace NzbDrone.Core.DecisionEngine
             context.Series = series;
             context.SeriesVersionId = seriesVersionId;
             context.SeriesVersionLabel = labels[0];
+            context.SeriesVersionPriority = selections.Values.First().Priority;
             context.Episodes = source.Episodes.Select(episode =>
             {
                 var copy = episode.CloneForVersion();

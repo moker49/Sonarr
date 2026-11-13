@@ -63,23 +63,23 @@ namespace Sonarr.Api.V3.Indexers
 
             var downloadClientId = ResolveDownloadClientId(release);
 
-            DownloadDecision decision;
+            List<DownloadDecision> decisions;
 
             lock (PushLock)
             {
-                var decisions = _downloadDecisionMaker.GetRssDecision(new List<ReleaseInfo> { info }, true);
+                decisions = _downloadDecisionMaker.GetRssDecision(new List<ReleaseInfo> { info }, true);
+                if (decisions.Count == 0 || decisions.Any(d => d.RemoteEpisode.ParsedEpisodeInfo == null))
+                {
+                    throw new ValidationException(new List<ValidationFailure> { new ("Title", "Unable to parse", release.Title) });
+                }
 
-                decision = decisions.FirstOrDefault();
-
-                _downloadDecisionProcessor.ProcessDecision(decision, downloadClientId).GetAwaiter().GetResult();
+                foreach (var decision in decisions)
+                {
+                    _downloadDecisionProcessor.ProcessDecision(decision, downloadClientId).GetAwaiter().GetResult();
+                }
             }
 
-            if (decision?.RemoteEpisode.ParsedEpisodeInfo == null)
-            {
-                throw new ValidationException(new List<ValidationFailure> { new ("Title", "Unable to parse", release.Title) });
-            }
-
-            return MapDecisions(new[] { decision });
+            return MapDecisions(decisions);
         }
 
         private void ResolveIndexer(ReleaseInfo release)

@@ -179,12 +179,33 @@ namespace NzbDrone.Core.Test.Download.Pending.PendingReleaseServiceTests
         }
 
         [Test]
-        public void versioned_pending_is_not_reprocessed_while_dispatch_is_disabled()
+        public void oldest_pending_release_does_not_cross_version_delay_windows()
         {
+            _series.SeriesType = SeriesTypes.Standard;
+            _parsedEpisodeInfo.AirDate = null;
+            Mocker.GetMock<IParsingService>().Setup(s => s.Map(It.IsAny<ParsedEpisodeInfo>(), _series))
+                .Returns(() => new RemoteEpisode { Series = _series, Episodes = new List<Episode> { _episode } });
+            GivenHeldRelease(_release.Title, _release.Indexer, DateTime.UtcNow.AddDays(-2));
+            _heldReleases[0].SeriesVersionId = 7;
+            GivenHeldRelease(_release.Title, _release.Indexer, DateTime.UtcNow.AddHours(-1));
+            _heldReleases[1].SeriesVersionId = 8;
+            Mocker.GetMock<IEpisodeVersionDecisionContext>().Setup(c => c.ForVersion(It.IsAny<RemoteEpisode>(), It.IsAny<int>()))
+                .Returns((RemoteEpisode source, int version) => source);
+
+            var oldest = Subject.OldestPendingRelease(_series.Id, new[] { _episode.Id }, 8);
+            oldest.SeriesVersionId.Should().Be(8);
+            oldest.Release.PublishDate.Should().Be(_heldReleases[1].Release.PublishDate);
+            Subject.OldestPendingRelease(_series.Id, new[] { _episode.Id }).Should().BeNull();
+        }
+
+        [Test]
+        public void versioned_pending_preserves_its_target_when_reprocessed()
+        {
+            Mocker.GetMock<NzbDrone.Core.Indexers.IIndexerStatusService>().Setup(s => s.GetBlockedProviders()).Returns(new List<NzbDrone.Core.Indexers.IndexerStatus>());
             GivenHeldRelease(_release.Title, _release.Indexer, _release.PublishDate);
             _heldReleases[0].SeriesVersionId = 1;
 
-            Subject.GetPending().Should().BeEmpty();
+            Subject.GetPending().Should().ContainSingle().Which.PendingSeriesVersionId.Should().Be(1);
             Mocker.GetMock<IPendingReleaseRepository>().Verify(v => v.Delete(It.IsAny<int>()), Times.Never());
         }
 

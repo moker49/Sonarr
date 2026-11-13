@@ -46,6 +46,18 @@ namespace NzbDrone.Core.Parser.Model
         [JsonIgnore]
         public PendingReleaseReason? PendingReleaseReason { get; set; }
 
+        [JsonIgnore]
+        public int? PendingSeriesVersionId { get; set; }
+
+        public ReleaseInfo CloneForPending(int? seriesVersionId, PendingReleaseReason reason)
+        {
+            // Preserve derived torrent fields while isolating per-version retry metadata.
+            var copy = (ReleaseInfo)MemberwiseClone();
+            copy.PendingSeriesVersionId = seriesVersionId;
+            copy.PendingReleaseReason = reason;
+            return copy;
+        }
+
         public int Age
         {
             get

@@ -227,7 +227,9 @@ function InteractiveSearch({ type, searchPayload }: InteractiveSearchProps) {
             {items.map((item) => {
               return (
                 <InteractiveSearchRow
-                  key={`${item.indexerId}-${item.guid}`}
+                  key={`${item.indexerId}-${item.guid}-${
+                    item.seriesVersionId ?? 'ordinary'
+                  }`}
                   {...item}
                   searchPayload={searchPayload}
                   onGrabPress={handleGrabPress}
