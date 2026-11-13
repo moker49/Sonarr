@@ -53,6 +53,7 @@ class QualityProfiles extends Component {
 
     return (
       <FieldSet legend={translate('QualityProfiles')}>
+        <p>{translate('CompositeEditorCreateHelp')}</p>
         <PageSectionContent
           errorMessage={translate('QualityProfilesLoadError')}
           {...otherProps}

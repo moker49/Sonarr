@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using FluentAssertions;
+using FluentValidation;
 using Moq;
 using NUnit.Framework;
 using NzbDrone.Core.Exceptions;
@@ -29,6 +30,16 @@ namespace NzbDrone.Api.Test.v3.Profiles
             var controller = new CompositeProfileController(drafts.Object, Mock.Of<IQualityProfileService>());
             var error = Assert.Throws<NzbDroneClientException>(() => controller.Save(1, new CompositeProfileResource { Versions = new List<CompositeProfileVersion>() }));
             error.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+
+        [Test]
+        public void save_reports_invalid_version_definitions_as_bad_request()
+        {
+            var drafts = new Mock<ICompositeProfileDraftService>();
+            drafts.Setup(d => d.Save(1, It.IsAny<List<CompositeProfileVersion>>())).Throws(new ValidationException("Invalid version label"));
+            var controller = new CompositeProfileController(drafts.Object, Mock.Of<IQualityProfileService>());
+            var error = Assert.Throws<NzbDroneClientException>(() => controller.Save(1, new CompositeProfileResource { Versions = new List<CompositeProfileVersion>() }));
+            error.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
         [Test]

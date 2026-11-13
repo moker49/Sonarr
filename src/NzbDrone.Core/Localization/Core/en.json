@@ -2173,5 +2173,21 @@
   "SeriesConversionFileDetails": "{episodes} episodes, {size}",
   "SeriesConversionApplyNotice": "Applying changes the series profile and file assignments. Reverse conversion is not yet available.",
   "SeriesConversionPreview": "Preview Conversion",
-  "SeriesConversionApply": "Apply Conversion"
+  "SeriesConversionApply": "Apply Conversion",
+  "CompositeEditorTitle": "Versions for {name}",
+  "CompositeEditorConfigure": "Configure Versions",
+  "CompositeEditorBadge": "Composite",
+  "CompositeEditorCreateHelp": "To create a composite profile, save an unused quality profile, then choose Configure Versions on its card and select two ordinary child profiles.",
+  "CompositeEditorCardHelp": "Open this profile to view its two versions. Quality and custom format rules come from the child profiles.",
+  "CompositeEditorDescription": "Choose two different ordinary profiles and a label for each version. Version 1 has the first acquisition priority. Each child's quality, size, and custom format rules apply to its version.",
+  "CompositeEditorVersion": "Version {number}",
+  "CompositeEditorLabel": "Version Label",
+  "CompositeEditorLabelHelp": "Use a unique filename-safe label of up to 64 characters, without surrounding spaces.",
+  "CompositeEditorPrimary": "Primary Version",
+  "CompositeEditorPrimaryHelp": "The primary version is used by the standard episode file view. Acquisition priority follows the version order above.",
+  "CompositeEditorUsageHelp": "Version definitions can only be changed while this profile is unused. After saving, use Convert Profile on a series to preview and apply its assignments.",
+  "CompositeEditorNeedsProfiles": "Create at least two other ordinary quality profiles before configuring versions.",
+  "CompositeEditorRequestFailed": "The profile request failed. Close this editor and reopen it to refresh the profile before trying again.",
+  "CompositeEditorRemove": "Remove Composite Definition",
+  "CompositeEditorRemoveHelp": "Remove the two version definitions and keep this quality profile as an ordinary profile? This is only allowed while the composite is unused."
 }

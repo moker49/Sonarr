@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Profiles.Qualities;
@@ -38,6 +39,10 @@ namespace Sonarr.Api.V3.Profiles.Quality
             try
             {
                 return new CompositeProfileResource { ProfileId = profileId, Versions = _drafts.Save(profileId, resource.Versions) };
+            }
+            catch (ValidationException ex)
+            {
+                throw new NzbDroneClientException(HttpStatusCode.BadRequest, ex.Message, ex);
             }
             catch (ArgumentException ex)
             {

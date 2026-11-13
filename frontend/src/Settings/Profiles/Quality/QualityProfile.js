@@ -7,6 +7,7 @@ import ConfirmModal from 'Components/Modal/ConfirmModal';
 import Tooltip from 'Components/Tooltip/Tooltip';
 import { icons, kinds, tooltipPositions } from 'Helpers/Props';
 import translate from 'Utilities/String/translate';
+import CompositeProfileModal from './CompositeProfileModal';
 import EditQualityProfileModalConnector from './EditQualityProfileModalConnector';
 import styles from './QualityProfile.css';
 
@@ -20,6 +21,7 @@ class QualityProfile extends Component {
 
     this.state = {
       isEditQualityProfileModalOpen: false,
+      isCompositeProfileModalOpen: false,
       isDeleteQualityProfileModalOpen: false
     };
   }
@@ -28,8 +30,14 @@ class QualityProfile extends Component {
   // Listeners
 
   onEditQualityProfilePress = () => {
-    this.setState({ isEditQualityProfileModalOpen: true });
+    this.setState(this.props.isComposite ? { isCompositeProfileModalOpen: true } : { isEditQualityProfileModalOpen: true });
   };
+
+  onCompositeProfilePress = () => this.setState({ isCompositeProfileModalOpen: true });
+
+  onCompositeProfileClose = () => this.setState({ isCompositeProfileModalOpen: false });
+
+  onProfileSettingsPress = () => this.setState({ isEditQualityProfileModalOpen: true });
 
   onEditQualityProfileModalClose = () => {
     this.setState({ isEditQualityProfileModalOpen: false });
@@ -82,20 +90,27 @@ class QualityProfile extends Component {
         <div className={styles.nameContainer}>
           <div className={styles.name}>
             {name}
-            {isComposite ? ` (${translate('CompositeDraft')})` : null}
+            {isComposite ? ` (${translate('CompositeEditorBadge')})` : null}
           </div>
 
           <IconButton
             className={styles.cloneButton}
-            title={translate('CloneProfile')}
-            name={icons.CLONE}
-            onPress={this.onCloneQualityProfilePress}
+            title={translate('CompositeEditorConfigure')}
+            name={icons.PROFILE}
+            onPress={this.onCompositeProfilePress}
+          />
+
+          <IconButton
+            className={styles.cloneButton}
+            title={translate(isComposite ? 'EditQualityProfile' : 'CloneProfile')}
+            name={isComposite ? icons.EDIT : icons.CLONE}
+            onPress={isComposite ? this.onProfileSettingsPress : this.onCloneQualityProfilePress}
           />
         </div>
 
         <div className={styles.qualities}>
           {
-            items.map((item) => {
+            !isComposite && items.map((item) => {
               if (!item.allowed) {
                 return null;
               }
@@ -152,6 +167,20 @@ class QualityProfile extends Component {
             })
           }
         </div>
+
+        {
+          isComposite &&
+            <p>{translate('CompositeEditorCardHelp')}</p>
+        }
+
+        {
+          this.state.isCompositeProfileModalOpen &&
+            <CompositeProfileModal
+              id={id}
+              name={name}
+              onModalClose={this.onCompositeProfileClose}
+            />
+        }
 
         <EditQualityProfileModalConnector
           id={id}
